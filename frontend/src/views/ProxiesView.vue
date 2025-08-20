@@ -201,9 +201,6 @@ onMounted(() => {
 
     <!-- Empty state -->
     <div v-else-if="(proxies?.length || 0) === 0" class="text-center py-16">
-      <div class="mockup-code bg-base-200 mx-auto max-w-lg">
-        <pre data-prefix="$"><code>caddy reverse-proxy --from example.com --to localhost:3000</code></pre>
-      </div>
       <h3 class="text-xl font-semibold mt-6 text-base-content">No proxies configured</h3>
       <p class="text-base-content/70 mt-2">Get started by adding your first proxy configuration</p>
       <button class="btn btn-primary mt-4" @click="showAddModal = true">

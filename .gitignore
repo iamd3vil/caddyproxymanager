@@ -1,2 +1,5 @@
 backend/caddy-config.json
 backend/server
+backend/static/
+backend/data/
+.playwright-mcp/
