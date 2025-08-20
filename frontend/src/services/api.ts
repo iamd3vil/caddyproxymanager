@@ -30,7 +30,7 @@ export interface StatusResponse {
 }
 
 class ApiClient {
-  private baseUrl: string
+  public baseUrl: string
 
   constructor(baseUrl?: string) {
     if (baseUrl) {
@@ -43,15 +43,26 @@ class ApiClient {
 
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    useAuth = true
   ): Promise<ApiResponse<T>> {
     try {
+      let headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(options.headers as Record<string, string> || {}),
+      }
+
+      // Add auth headers if needed
+      if (useAuth) {
+        const token = localStorage.getItem('auth_token')
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`
+        }
+      }
+
       const response = await fetch(`${this.baseUrl}${endpoint}`, {
         ...options,
-        headers: {
-          'Content-Type': 'application/json',
-          ...options.headers,
-        },
+        headers,
       })
 
       if (!response.ok) {
@@ -128,3 +139,8 @@ class ApiClient {
 }
 
 export const apiClient = new ApiClient()
+
+// Export api object for use in auth service
+export const api = {
+  baseUrl: apiClient.baseUrl + '/api'
+}

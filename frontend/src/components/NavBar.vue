@@ -1,14 +1,42 @@
 <script setup lang="ts">
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { ref, onMounted, watch } from 'vue'
+import { authService } from '../services/auth'
 
+const router = useRouter()
 const isDark = ref(false)
+const isAuthenticated = ref(false)
+const isAuthEnabled = ref(true)
+const currentUser = ref<{ username: string } | null>(null)
 
-// Initialize theme on mount
-onMounted(() => {
+// Initialize theme and check auth status
+onMounted(async () => {
   const savedTheme = localStorage.getItem('theme') || 'light'
   isDark.value = savedTheme === 'dark'
   applyTheme(savedTheme)
+  
+  // Check auth status
+  try {
+    const status = await authService.getStatus()
+    isAuthEnabled.value = status.auth_enabled
+    isAuthenticated.value = authService.isAuthenticated()
+    
+    // Fetch current user if authenticated and auth is enabled
+    if (isAuthEnabled.value && isAuthenticated.value) {
+      try {
+        const userResponse = await authService.getCurrentUser()
+        if (userResponse.success && userResponse.user) {
+          currentUser.value = userResponse.user
+        }
+      } catch (error) {
+        console.error('Failed to get current user:', error)
+        // If user fetch fails, user might not be authenticated
+        isAuthenticated.value = false
+      }
+    }
+  } catch (error) {
+    console.error('Failed to check auth status:', error)
+  }
 })
 
 // Apply theme function
@@ -23,6 +51,22 @@ watch(isDark, (newValue) => {
   applyTheme(theme)
   localStorage.setItem('theme', theme)
 })
+
+// Handle logout
+const handleLogout = async () => {
+  try {
+    await authService.logout()
+    isAuthenticated.value = false
+    currentUser.value = null
+    router.push('/login')
+  } catch (error) {
+    console.error('Logout error:', error)
+    // Force logout even if API call fails
+    isAuthenticated.value = false
+    currentUser.value = null
+    router.push('/login')
+  }
+}
 </script>
 
 <template>
@@ -58,7 +102,8 @@ watch(isDark, (newValue) => {
         <li><RouterLink to="/proxies" class="btn btn-ghost">Proxies</RouterLink></li>
       </ul>
     </div>
-    <div class="navbar-end">
+    <div class="navbar-end gap-2">
+      <!-- Theme toggle -->
       <label class="flex cursor-pointer gap-2">
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -87,6 +132,39 @@ watch(isDark, (newValue) => {
           <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
         </svg>
       </label>
+      
+      <!-- User dropdown (only show if auth is enabled and user is authenticated) -->
+      <div v-if="isAuthEnabled && isAuthenticated" class="dropdown dropdown-end">
+        <div tabindex="0" role="button" class="btn btn-ghost gap-2">
+          <!-- User avatar -->
+          <div class="avatar placeholder">
+            <div class="bg-neutral text-neutral-content w-8 h-8 rounded-full">
+              <span class="text-xs">{{ currentUser?.username?.charAt(0).toUpperCase() || 'U' }}</span>
+            </div>
+          </div>
+          <!-- Username -->
+          <span class="hidden sm:inline text-sm">{{ currentUser?.username || 'User' }}</span>
+          <!-- Dropdown arrow -->
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+        <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow">
+          <li class="menu-title">
+            <span>Signed in as</span>
+            <span class="font-semibold">{{ currentUser?.username || 'User' }}</span>
+          </li>
+          <div class="divider my-0"></div>
+          <li>
+            <button @click="handleLogout" class="text-error">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              Sign Out
+            </button>
+          </li>
+        </ul>
+      </div>
     </div>
   </div>
 </template>
