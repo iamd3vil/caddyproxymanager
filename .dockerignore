@@ -1,0 +1,34 @@
+# Node.js
+frontend/node_modules/
+frontend/.vite/
+frontend/dist/
+
+# Go
+backend/tmp/
+backend/*.log
+
+# Git and IDE
+.git/
+.gitignore
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Development files
+README.md
+.playwright-mcp/
+caddy-config.json
+
+# Justfile and development configs
+justfile
+Justfile
