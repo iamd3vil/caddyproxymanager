@@ -72,8 +72,50 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	// Enable CORS and setup routes
-	mux.HandleFunc("/", authMiddleware.CORS(authMiddleware.CheckSetup(routeHandler(handler, authHandler, authMiddleware))))
+	// Enable CORS for all routes
+	corsHandler := authMiddleware.CORS
+
+	// Public auth routes
+	mux.HandleFunc("GET /api/auth/status", corsHandler(authHandler.Status))
+	mux.HandleFunc("POST /api/auth/setup", corsHandler(authHandler.Setup))
+	mux.HandleFunc("POST /api/auth/login", corsHandler(authHandler.Login))
+	mux.HandleFunc("POST /api/auth/logout", corsHandler(authHandler.Logout))
+	mux.HandleFunc("GET /api/auth/me", corsHandler(authMiddleware.RequireAuth(authHandler.Me)))
+
+	// Protected API routes
+	mux.HandleFunc("GET /api/health", corsHandler(authMiddleware.RequireAuth(handler.Health)))
+	mux.HandleFunc("GET /api/proxies", corsHandler(authMiddleware.RequireAuth(handler.GetProxies)))
+	mux.HandleFunc("POST /api/proxies", corsHandler(authMiddleware.RequireAuth(handler.CreateProxy)))
+	mux.HandleFunc("PUT /api/proxies/{id}", corsHandler(authMiddleware.RequireAuth(handler.UpdateProxy)))
+	mux.HandleFunc("DELETE /api/proxies/{id}", corsHandler(authMiddleware.RequireAuth(handler.DeleteProxy)))
+	mux.HandleFunc("GET /api/status", corsHandler(authMiddleware.RequireAuth(handler.Status)))
+	mux.HandleFunc("POST /api/reload", corsHandler(authMiddleware.RequireAuth(handler.Reload)))
+
+	// Static file serving for SPA
+	staticDir := os.Getenv("STATIC_DIR")
+	if staticDir == "" {
+		staticDir = "./static/" // Default for development
+	}
+
+	// Create file server for static files
+	fs := http.FileServer(http.Dir(staticDir))
+
+	// Handle SPA routing - serve index.html for non-API routes
+	mux.HandleFunc("/", corsHandler(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			http.NotFound(w, r)
+			return
+		}
+
+		// Check if the file exists, otherwise serve index.html
+		if r.URL.Path != "/" {
+			if _, err := os.Stat(staticDir + r.URL.Path); os.IsNotExist(err) {
+				r.URL.Path = "/"
+			}
+		}
+
+		fs.ServeHTTP(w, r)
+	}))
 
 	fmt.Printf("Server starting on port %s\n", port)
 	fmt.Printf("Caddy Admin API: %s\n", caddyAdminURL)
@@ -85,56 +127,4 @@ func main() {
 		fmt.Println("Authentication: ENABLED")
 	}
 	log.Fatal(http.ListenAndServe(":"+port, mux))
-}
-
-// routeHandler wraps all requests and routes to appropriate handlers with auth
-func routeHandler(h *handlers.Handler, authHandler *handlers.AuthHandler, authMiddleware *auth.Middleware) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// Route to appropriate handler
-		switch {
-		// Auth routes (public)
-		case r.URL.Path == "/api/auth/status" && r.Method == "GET":
-			authHandler.Status(w, r)
-		case r.URL.Path == "/api/auth/setup" && r.Method == "POST":
-			authHandler.Setup(w, r)
-		case r.URL.Path == "/api/auth/login" && r.Method == "POST":
-			authHandler.Login(w, r)
-		case r.URL.Path == "/api/auth/logout" && r.Method == "POST":
-			authHandler.Logout(w, r)
-		case r.URL.Path == "/api/auth/me" && r.Method == "GET":
-			authMiddleware.RequireAuth(authHandler.Me)(w, r)
-		// Protected API routes
-		case r.URL.Path == "/api/health" && r.Method == "GET":
-			authMiddleware.RequireAuth(h.Health)(w, r)
-		case r.URL.Path == "/api/proxies" && r.Method == "GET":
-			authMiddleware.RequireAuth(h.GetProxies)(w, r)
-		case r.URL.Path == "/api/proxies" && r.Method == "POST":
-			authMiddleware.RequireAuth(h.CreateProxy)(w, r)
-		case strings.HasPrefix(r.URL.Path, "/api/proxies/") && r.Method == "PUT":
-			authMiddleware.RequireAuth(h.UpdateProxy)(w, r)
-		case strings.HasPrefix(r.URL.Path, "/api/proxies/") && r.Method == "DELETE":
-			authMiddleware.RequireAuth(h.DeleteProxy)(w, r)
-		case r.URL.Path == "/api/status" && r.Method == "GET":
-			authMiddleware.RequireAuth(h.Status)(w, r)
-		case r.URL.Path == "/api/reload" && r.Method == "POST":
-			authMiddleware.RequireAuth(h.Reload)(w, r)
-		default:
-			// Serve static files for frontend
-			staticDir := os.Getenv("STATIC_DIR")
-			if staticDir == "" {
-				staticDir = "./static/" // Default for development
-			}
-
-			fs := http.FileServer(http.Dir(staticDir))
-
-			// Handle SPA routing - serve index.html for non-API routes
-			if r.URL.Path != "/" && !strings.HasPrefix(r.URL.Path, "/api/") {
-				if _, err := os.Stat(staticDir + r.URL.Path); os.IsNotExist(err) {
-					r.URL.Path = "/"
-				}
-			}
-
-			fs.ServeHTTP(w, r)
-		}
-	}
 }
