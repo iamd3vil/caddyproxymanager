@@ -14,8 +14,13 @@ const formData = ref({
   ssl_mode: 'auto',
   challenge_type: 'http',
   dns_provider: 'cloudflare',
-  dns_credentials: {} as Record<string, string>
+  dns_credentials: {} as Record<string, string>,
+  custom_headers: {} as Record<string, string>
 })
+
+const newHeaderKey = ref('')
+const newHeaderValue = ref('')
+const activeTab = ref('basic')
 
 const loadProxies = async () => {
   loading.value = true
@@ -54,7 +59,8 @@ const addProxy = async () => {
       ssl_mode: 'auto', 
       challenge_type: 'http', 
       dns_provider: 'cloudflare', 
-      dns_credentials: {} as Record<string, string> 
+      dns_credentials: {} as Record<string, string>,
+      custom_headers: {} as Record<string, string>
     }
     await loadProxies()
   }
@@ -134,6 +140,19 @@ const updateDNSCredentials = () => {
   } else if (provider === 'duckdns') {
     formData.value.dns_credentials = { token: '' }
   }
+}
+
+// Custom headers handling
+const addCustomHeader = () => {
+  if (newHeaderKey.value.trim() && newHeaderValue.value.trim()) {
+    formData.value.custom_headers[newHeaderKey.value.trim()] = newHeaderValue.value.trim()
+    newHeaderKey.value = ''
+    newHeaderValue.value = ''
+  }
+}
+
+const removeCustomHeader = (key: string) => {
+  delete formData.value.custom_headers[key]
 }
 
 // DNS provider configurations
@@ -260,114 +279,225 @@ onMounted(() => {
     <div v-if="showAddModal" class="modal modal-open">
       <div class="modal-box">
         <h3 class="font-bold text-lg text-base-content">Add New Proxy</h3>
-        <form @submit.prevent="addProxy" class="py-4">
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text">Domain/Subdomain</span>
-            </label>
-            <input 
-              v-model="formData.domain"
-              type="text" 
-              placeholder="example.com" 
-              class="input input-bordered" 
-              required
-            />
-          </div>
-          
-          <div class="form-control mt-4">
-            <label class="label">
-              <span class="label-text">Target URL</span>
-            </label>
-            <input 
-              v-model="formData.target_url"
-              type="text" 
-              placeholder="http://localhost:3000" 
-              class="input input-bordered" 
-              required
-            />
-          </div>
-
-          <div class="form-control mt-4">
-            <label class="label">
-              <span class="label-text">SSL Certificate</span>
-            </label>
-            <select v-model="formData.ssl_mode" class="select select-bordered">
-              <option value="auto">Auto (Let's Encrypt)</option>
-              <option value="custom">Custom Certificate</option>
-              <option value="none">None (HTTP only)</option>
-            </select>
+        <form @submit.prevent="addProxy" class="py-6">
+          <!-- Tabs -->
+          <div class="tabs tabs-bordered mb-6 bg-base-200 p-1 rounded-lg">
+            <button 
+              type="button"
+              class="tab tab-lg flex-1 font-medium"
+              :class="{ 'tab-active bg-base-100 text-primary': activeTab === 'basic' }"
+              @click="activeTab = 'basic'"
+            >
+              Basic Settings
+            </button>
+            <button 
+              type="button"
+              class="tab tab-lg flex-1 font-medium"
+              :class="{ 'tab-active bg-base-100 text-primary': activeTab === 'ssl' }"
+              @click="activeTab = 'ssl'"
+            >
+              SSL & ACME
+            </button>
+            <button 
+              type="button"
+              class="tab tab-lg flex-1 font-medium"
+              :class="{ 'tab-active bg-base-100 text-primary': activeTab === 'advanced' }"
+              @click="activeTab = 'advanced'"
+            >
+              Advanced
+            </button>
           </div>
 
-          <!-- ACME Challenge Configuration (only shown when SSL is auto) -->
-          <div v-if="formData.ssl_mode === 'auto'" class="mt-6 p-4 bg-base-200 rounded-lg">
-            <h4 class="font-semibold text-base-content mb-4">ACME Challenge Configuration</h4>
+          <!-- Basic Settings Tab -->
+          <div v-show="activeTab === 'basic'" class="space-y-6">
+            <div class="form-control">
+              <label class="label pb-2">
+                <span class="label-text font-medium">Domain/Subdomain</span>
+              </label>
+              <input 
+                v-model="formData.domain"
+                type="text" 
+                placeholder="example.com" 
+                class="input input-bordered w-full" 
+                required
+              />
+              <div class="label">
+                <span class="label-text-alt">The domain that will proxy to your target</span>
+              </div>
+            </div>
             
             <div class="form-control">
-              <label class="label">
-                <span class="label-text">Challenge Type</span>
+              <label class="label pb-2">
+                <span class="label-text font-medium">Target URL</span>
               </label>
-              <select v-model="formData.challenge_type" class="select select-bordered">
-                <option value="http">HTTP-01 Challenge</option>
-                <option value="dns">DNS-01 Challenge</option>
+              <input 
+                v-model="formData.target_url"
+                type="text" 
+                placeholder="http://localhost:3000" 
+                class="input input-bordered w-full" 
+                required
+              />
+              <div class="label">
+                <span class="label-text-alt">The destination where requests will be forwarded</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- SSL & ACME Tab -->
+          <div v-show="activeTab === 'ssl'" class="space-y-6">
+            <div class="form-control">
+              <label class="label pb-2">
+                <span class="label-text font-medium">SSL Certificate</span>
+              </label>
+              <select v-model="formData.ssl_mode" class="select select-bordered w-full">
+                <option value="auto">Auto (Let's Encrypt)</option>
+                <option value="custom">Custom Certificate</option>
+                <option value="none">None (HTTP only)</option>
               </select>
               <div class="label">
-                <span class="label-text-alt">
-                  {{ formData.challenge_type === 'http' 
-                      ? 'Uses HTTP validation (port 80 must be accessible)' 
-                      : 'Uses DNS validation (works behind firewalls)' }}
-                </span>
+                <span class="label-text-alt">Choose how SSL certificates are handled</span>
               </div>
             </div>
 
-            <!-- DNS Challenge Configuration -->
-            <div v-if="formData.challenge_type === 'dns'" class="mt-4">
+            <!-- ACME Challenge Configuration (only shown when SSL is auto) -->
+            <div v-if="formData.ssl_mode === 'auto'" class="space-y-6">
               <div class="form-control">
-                <label class="label">
-                  <span class="label-text">DNS Provider</span>
+                <label class="label pb-2">
+                  <span class="label-text font-medium">Challenge Type</span>
                 </label>
-                <select 
-                  v-model="formData.dns_provider" 
-                  @change="updateDNSCredentials()"
-                  class="select select-bordered"
-                >
-                  <option v-for="provider in dnsProviders" :key="provider.value" :value="provider.value">
-                    {{ provider.label }}
-                  </option>
+                <select v-model="formData.challenge_type" class="select select-bordered w-full">
+                  <option value="http">HTTP-01 Challenge</option>
+                  <option value="dns">DNS-01 Challenge</option>
                 </select>
+                <div class="label pt-2">
+                  <span class="label-text-alt">
+                    {{ formData.challenge_type === 'http' 
+                        ? 'Uses HTTP validation (port 80 must be accessible)' 
+                        : 'Uses DNS validation (works behind firewalls)' }}
+                  </span>
+                </div>
               </div>
 
-              <!-- DNS Provider Credentials -->
-              <div class="mt-4">
-                <h5 class="font-medium text-base-content mb-2">DNS Provider Credentials</h5>
-                <div v-for="field in dnsProviders.find(p => p.value === formData.dns_provider)?.fields" :key="field.key" class="form-control mt-2">
-                  <label class="label">
-                    <span class="label-text">{{ field.label }}</span>
+              <!-- DNS Challenge Configuration -->
+              <div v-if="formData.challenge_type === 'dns'" class="space-y-6">
+                <div class="form-control">
+                  <label class="label pb-2">
+                    <span class="label-text font-medium">DNS Provider</span>
                   </label>
-                  <input 
-                    v-model="formData.dns_credentials[field.key]"
-                    :type="field.type"
-                    class="input input-bordered input-sm"
-                    :required="field.required && formData.challenge_type === 'dns'"
-                    :placeholder="field.type === 'password' ? '••••••••••••••••' : ''"
-                  />
+                  <select 
+                    v-model="formData.dns_provider" 
+                    @change="updateDNSCredentials()"
+                    class="select select-bordered w-full"
+                  >
+                    <option v-for="provider in dnsProviders" :key="provider.value" :value="provider.value">
+                      {{ provider.label }}
+                    </option>
+                  </select>
                 </div>
-                
-                <!-- Help text for Cloudflare -->
-                <div v-if="formData.dns_provider === 'cloudflare'" class="alert alert-info mt-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                  </svg>
-                  <div class="text-xs">
-                    <p><strong>API Token:</strong> Create a token with Zone:DNS:Edit permissions</p>
-                    <p><strong>Email:</strong> Only needed for legacy API key authentication</p>
+
+                <!-- DNS Provider Credentials -->
+                <div>
+                  <h5 class="font-medium text-base-content mb-4">DNS Provider Credentials</h5>
+                  <div class="space-y-4">
+                    <div v-for="field in dnsProviders.find(p => p.value === formData.dns_provider)?.fields" :key="field.key" class="form-control">
+                      <label class="label pb-2">
+                        <span class="label-text font-medium">{{ field.label }}</span>
+                      </label>
+                      <input 
+                        v-model="formData.dns_credentials[field.key]"
+                        :type="field.type"
+                        class="input input-bordered w-full"
+                        :required="field.required && formData.challenge_type === 'dns'"
+                        :placeholder="field.type === 'password' ? '••••••••••••••••' : ''"
+                      />
+                    </div>
                   </div>
+                  
+                  <!-- Help text for Cloudflare -->
+                  <div v-if="formData.dns_provider === 'cloudflare'" class="alert alert-info mt-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <div class="text-xs">
+                      <p><strong>API Token:</strong> Create a token with Zone:DNS:Edit permissions</p>
+                      <p><strong>Email:</strong> Only needed for legacy API key authentication</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Advanced Tab -->
+          <div v-show="activeTab === 'advanced'" class="space-y-6">
+            <!-- Custom Headers Section -->
+            <div>
+              <h4 class="font-semibold text-base-content mb-2">Custom Headers</h4>
+              <p class="text-sm text-base-content/70 mb-6">These headers will be added to requests sent to the target</p>
+              
+              <!-- Existing Headers -->
+              <div v-if="Object.keys(formData.custom_headers).length > 0" class="space-y-3 mb-6">
+                <div v-for="(_, key) in formData.custom_headers" :key="key" class="flex items-start gap-3 p-3 bg-base-200 rounded-lg border">
+                  <div class="flex-1 grid grid-cols-2 gap-3">
+                    <div>
+                      <label class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Header Name</label>
+                      <div class="text-sm font-mono bg-base-100 px-2 py-1 rounded">{{ key }}</div>
+                    </div>
+                    <div>
+                      <label class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Header Value</label>
+                      <input 
+                        v-model="formData.custom_headers[key]"
+                        type="text" 
+                        class="input input-bordered input-sm w-full"
+                        placeholder="Header value"
+                      />
+                    </div>
+                  </div>
+                  <div class="flex flex-col justify-end h-full pt-5">
+                    <button 
+                      type="button"
+                      class="btn btn-sm btn-error btn-outline"
+                      @click="removeCustomHeader(key)"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Add New Header -->
+              <div class="border-t pt-4">
+                <label class="text-sm font-medium text-base-content mb-3 block">Add New Header</label>
+                <div class="flex gap-3">
+                  <input 
+                    v-model="newHeaderKey"
+                    type="text" 
+                    placeholder="Header name (e.g., X-Real-IP)" 
+                    class="input input-bordered flex-1"
+                    @keyup.enter="addCustomHeader"
+                  />
+                  <input 
+                    v-model="newHeaderValue"
+                    type="text" 
+                    placeholder="Header value (e.g., {remote_host})" 
+                    class="input input-bordered flex-1"
+                    @keyup.enter="addCustomHeader"
+                  />
+                  <button 
+                    type="button"
+                    class="btn btn-primary"
+                    @click="addCustomHeader"
+                    :disabled="!newHeaderKey.trim() || !newHeaderValue.trim()"
+                  >
+                    Add
+                  </button>
                 </div>
               </div>
             </div>
           </div>
         </form>
         
-        <div class="modal-action">
+        <div class="modal-action pt-6">
           <button class="btn" @click="showAddModal = false" :disabled="loading">Cancel</button>
           <button class="btn btn-primary" @click="addProxy" :disabled="loading">
             <span v-if="loading" class="loading loading-spinner loading-sm"></span>

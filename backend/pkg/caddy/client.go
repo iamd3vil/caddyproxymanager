@@ -116,6 +116,26 @@ func (c *Client) AddProxy(proxy models.Proxy) error {
 		},
 	}
 
+	// Add custom headers if provided
+	if len(proxy.CustomHeaders) > 0 {
+		if handler.Headers == nil {
+			handler.Headers = &models.CaddyHeaders{
+				Request: &models.CaddyHeadersRequest{
+					Set: make(map[string][]string),
+				},
+			}
+		} else if handler.Headers.Request == nil {
+			handler.Headers.Request = &models.CaddyHeadersRequest{
+				Set: make(map[string][]string),
+			}
+		}
+
+		// Add custom headers to the existing Host header
+		for key, value := range proxy.CustomHeaders {
+			handler.Headers.Request.Set[key] = []string{value}
+		}
+	}
+
 	// Add HTTPS transport if target uses HTTPS
 	if useHTTPS {
 		handler.Transport = &models.CaddyTransport{

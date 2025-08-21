@@ -6,6 +6,7 @@ export interface Proxy {
   challenge_type?: string
   dns_provider?: string
   dns_credentials?: Record<string, string>
+  custom_headers?: Record<string, string>
   status?: string
   created_at: string
   updated_at: string
@@ -97,6 +98,7 @@ class ApiClient {
     challenge_type?: string
     dns_provider?: string
     dns_credentials?: Record<string, string>
+    custom_headers?: Record<string, string>
   }): Promise<ApiResponse<Proxy>> {
     return this.request('/api/proxies', {
       method: 'POST',
@@ -113,6 +115,7 @@ class ApiClient {
       challenge_type?: string
       dns_provider?: string
       dns_credentials?: Record<string, string>
+      custom_headers?: Record<string, string>
     }
   ): Promise<ApiResponse<Proxy>> {
     return this.request(`/api/proxies/${id}`, {

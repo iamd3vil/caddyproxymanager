@@ -61,6 +61,7 @@ func (h *Handler) CreateProxy(w http.ResponseWriter, r *http.Request) {
 		ChallengeType  string            `json:"challenge_type"`
 		DNSProvider    string            `json:"dns_provider"`
 		DNSCredentials map[string]string `json:"dns_credentials"`
+		CustomHeaders  map[string]string `json:"custom_headers"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&proxyReq); err != nil {
@@ -101,6 +102,7 @@ func (h *Handler) CreateProxy(w http.ResponseWriter, r *http.Request) {
 	proxy.ChallengeType = proxyReq.ChallengeType
 	proxy.DNSProvider = proxyReq.DNSProvider
 	proxy.DNSCredentials = proxyReq.DNSCredentials
+	proxy.CustomHeaders = proxyReq.CustomHeaders
 
 	// Add proxy to Caddy configuration
 	if err := h.CaddyClient.AddProxy(*proxy); err != nil {
@@ -130,6 +132,7 @@ func (h *Handler) UpdateProxy(w http.ResponseWriter, r *http.Request) {
 		ChallengeType  string            `json:"challenge_type"`
 		DNSProvider    string            `json:"dns_provider"`
 		DNSCredentials map[string]string `json:"dns_credentials"`
+		CustomHeaders  map[string]string `json:"custom_headers"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&proxyReq); err != nil {
@@ -171,6 +174,7 @@ func (h *Handler) UpdateProxy(w http.ResponseWriter, r *http.Request) {
 	proxy.ChallengeType = proxyReq.ChallengeType
 	proxy.DNSProvider = proxyReq.DNSProvider
 	proxy.DNSCredentials = proxyReq.DNSCredentials
+	proxy.CustomHeaders = proxyReq.CustomHeaders
 	proxy.UpdateTimestamp()
 
 	// Update proxy in Caddy configuration

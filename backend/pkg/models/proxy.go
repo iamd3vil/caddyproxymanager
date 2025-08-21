@@ -16,6 +16,7 @@ type Proxy struct {
 	ChallengeType  string            `json:"challenge_type"`  // "http", "dns"
 	DNSProvider    string            `json:"dns_provider"`    // "cloudflare", "digitalocean", "duckdns"
 	DNSCredentials map[string]string `json:"dns_credentials"` // provider-specific credentials
+	CustomHeaders  map[string]string `json:"custom_headers"`  // custom request headers
 	Status         string            `json:"status"`          // "active", "inactive", "error"
 	CreatedAt      string            `json:"created_at"`
 	UpdatedAt      string            `json:"updated_at"`
@@ -32,6 +33,7 @@ func NewProxy(domain, targetURL, sslMode string) *Proxy {
 		ChallengeType:  "http", // default to HTTP challenge
 		DNSProvider:    "",
 		DNSCredentials: make(map[string]string),
+		CustomHeaders:  make(map[string]string),
 		Status:         "active",
 		CreatedAt:      now,
 		UpdatedAt:      now,
