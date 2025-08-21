@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/sarat/caddyproxymanager/internal/handlers"
@@ -14,6 +18,13 @@ import (
 )
 
 func main() {
+	// Create WaitGroup to track goroutines
+	var wg sync.WaitGroup
+
+	// Set up signal handling for graceful shutdown
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -53,7 +64,7 @@ func main() {
 	}
 
 	// Start session cleanup goroutine
-	go func() {
+	wg.Go(func() {
 		ticker := time.NewTicker(1 * time.Hour)
 		defer ticker.Stop()
 		for {
@@ -62,9 +73,12 @@ func main() {
 				if err := authStorage.CleanExpiredSessions(); err != nil {
 					log.Printf("Failed to clean expired sessions: %v", err)
 				}
+			case <-ctx.Done():
+				fmt.Println("Session cleanup goroutine shutting down...")
+				return
 			}
 		}
-	}()
+	})
 
 	handler := handlers.New(caddyClient)
 	authHandler := handlers.NewAuthHandler(authStorage)
@@ -117,14 +131,47 @@ func main() {
 		fs.ServeHTTP(w, r)
 	}))
 
-	fmt.Printf("Server starting on port %s\n", port)
-	fmt.Printf("Caddy Admin API: %s\n", caddyAdminURL)
-	fmt.Printf("Config file: %s\n", configFile)
-	fmt.Printf("Data directory: %s\n", dataDir)
-	if os.Getenv("DISABLE_AUTH") == "true" {
-		fmt.Println("Authentication: DISABLED")
-	} else {
-		fmt.Println("Authentication: ENABLED")
+	// Create HTTP server
+	server := &http.Server{
+		Addr:    ":" + port,
+		Handler: mux,
 	}
-	log.Fatal(http.ListenAndServe(":"+port, mux))
+
+	// Start server in a goroutine
+	wg.Go(func() {
+		fmt.Printf("Server starting on port %s\n", port)
+		fmt.Printf("Caddy Admin API: %s\n", caddyAdminURL)
+		fmt.Printf("Config file: %s\n", configFile)
+		fmt.Printf("Data directory: %s\n", dataDir)
+		if os.Getenv("DISABLE_AUTH") == "true" {
+			fmt.Println("Authentication: DISABLED")
+		} else {
+			fmt.Println("Authentication: ENABLED")
+		}
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed to start: %v", err)
+		}
+	})
+
+	// Wait for interrupt signal
+	<-ctx.Done()
+	fmt.Println("\nShutdown signal received, initiating graceful shutdown...")
+
+	// Cancel context to signal goroutines to stop
+	cancel()
+
+	// Shutdown HTTP server
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Printf("HTTP server shutdown error: %v", err)
+	} else {
+		fmt.Println("HTTP server gracefully stopped")
+	}
+
+	// Wait for all goroutines to finish
+	fmt.Println("Waiting for goroutines to finish...")
+	wg.Wait()
+	fmt.Println("All goroutines finished, graceful shutdown completed")
 }
