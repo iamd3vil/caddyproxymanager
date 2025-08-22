@@ -350,7 +350,7 @@ onMounted(() => {
                 <span class="label-text font-medium">SSL Certificate</span>
               </label>
               <select v-model="formData.ssl_mode" class="select select-bordered w-full">
-                <option value="auto">Auto (Let's Encrypt)</option>
+                <option value="auto">Auto (ACME)</option>
                 <option value="custom">Custom Certificate</option>
                 <option value="none">None (HTTP only)</option>
               </select>
