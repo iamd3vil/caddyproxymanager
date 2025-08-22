@@ -15,7 +15,8 @@ const formData = ref({
   challenge_type: 'http',
   dns_provider: 'cloudflare',
   dns_credentials: {} as Record<string, string>,
-  custom_headers: {} as Record<string, string>
+  custom_headers: {} as Record<string, string>,
+  basic_auth: null as { enabled: boolean; username: string; password: string } | null
 })
 
 const newHeaderKey = ref('')
@@ -60,7 +61,8 @@ const addProxy = async () => {
       challenge_type: 'http', 
       dns_provider: 'cloudflare', 
       dns_credentials: {} as Record<string, string>,
-      custom_headers: {} as Record<string, string>
+      custom_headers: {} as Record<string, string>,
+      basic_auth: null as { enabled: boolean; username: string; password: string } | null
     }
     await loadProxies()
   }
@@ -430,6 +432,61 @@ onMounted(() => {
 
           <!-- Advanced Tab -->
           <div v-show="activeTab === 'advanced'" class="space-y-6">
+            <!-- Basic Authentication Section -->
+            <div>
+              <h4 class="font-semibold text-base-content mb-2">Basic Authentication</h4>
+              <p class="text-sm text-base-content/70 mb-4">Protect this proxy with HTTP Basic Authentication</p>
+              
+              <div class="form-control">
+                <label class="label cursor-pointer justify-start gap-3">
+                  <input 
+                    type="checkbox" 
+                    class="checkbox checkbox-primary" 
+                    :checked="formData.basic_auth?.enabled || false"
+                    @change="(e) => {
+                      if ((e.target as HTMLInputElement).checked) {
+                        formData.basic_auth = { enabled: true, username: '', password: '' }
+                      } else {
+                        formData.basic_auth = null
+                      }
+                    }"
+                  />
+                  <span class="label-text font-medium">Enable Basic Authentication</span>
+                </label>
+              </div>
+
+              <div v-if="formData.basic_auth?.enabled" class="mt-4 space-y-4 p-4 bg-base-200 rounded-lg">
+                <div class="form-control">
+                  <label class="label pb-2">
+                    <span class="label-text font-medium">Username</span>
+                  </label>
+                  <input 
+                    v-model="formData.basic_auth.username"
+                    type="text" 
+                    placeholder="Enter username" 
+                    class="input input-bordered w-full"
+                    required
+                  />
+                </div>
+                
+                <div class="form-control">
+                  <label class="label pb-2">
+                    <span class="label-text font-medium">Password</span>
+                  </label>
+                  <input 
+                    v-model="formData.basic_auth.password"
+                    type="password" 
+                    placeholder="Enter password" 
+                    class="input input-bordered w-full"
+                    required
+                  />
+                  <div class="label">
+                    <span class="label-text-alt">Password will be securely hashed by Caddy</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <!-- Custom Headers Section -->
             <div>
               <h4 class="font-semibold text-base-content mb-2">Custom Headers</h4>

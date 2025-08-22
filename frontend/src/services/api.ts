@@ -7,6 +7,7 @@ export interface Proxy {
   dns_provider?: string
   dns_credentials?: Record<string, string>
   custom_headers?: Record<string, string>
+  basic_auth?: { enabled: boolean; username: string; password: string } | null
   status?: string
   created_at: string
   updated_at: string
@@ -99,6 +100,7 @@ class ApiClient {
     dns_provider?: string
     dns_credentials?: Record<string, string>
     custom_headers?: Record<string, string>
+    basic_auth?: { enabled: boolean; username: string; password: string } | null
   }): Promise<ApiResponse<Proxy>> {
     return this.request('/api/proxies', {
       method: 'POST',
@@ -116,6 +118,7 @@ class ApiClient {
       dns_provider?: string
       dns_credentials?: Record<string, string>
       custom_headers?: Record<string, string>
+      basic_auth?: { enabled: boolean; username: string; password: string } | null
     }
   ): Promise<ApiResponse<Proxy>> {
     return this.request(`/api/proxies/${id}`, {

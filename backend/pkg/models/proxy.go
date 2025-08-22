@@ -7,6 +7,13 @@ import (
 	"time"
 )
 
+// BasicAuth represents HTTP Basic Authentication configuration
+type BasicAuth struct {
+	Enabled  bool   `json:"enabled"`
+	Username string `json:"username"`
+	Password string `json:"password"` // This will be hashed by Caddy
+}
+
 // Proxy represents a reverse proxy configuration
 type Proxy struct {
 	ID             string            `json:"id"`
@@ -17,6 +24,7 @@ type Proxy struct {
 	DNSProvider    string            `json:"dns_provider"`    // "cloudflare", "digitalocean", "duckdns"
 	DNSCredentials map[string]string `json:"dns_credentials"` // provider-specific credentials
 	CustomHeaders  map[string]string `json:"custom_headers"`  // custom request headers
+	BasicAuth      *BasicAuth        `json:"basic_auth"`      // optional basic authentication
 	Status         string            `json:"status"`          // "active", "inactive", "error"
 	CreatedAt      string            `json:"created_at"`
 	UpdatedAt      string            `json:"updated_at"`
@@ -34,6 +42,7 @@ func NewProxy(domain, targetURL, sslMode string) *Proxy {
 		DNSProvider:    "",
 		DNSCredentials: make(map[string]string),
 		CustomHeaders:  make(map[string]string),
+		BasicAuth:      nil, // disabled by default
 		Status:         "active",
 		CreatedAt:      now,
 		UpdatedAt:      now,

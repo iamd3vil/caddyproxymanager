@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/sarat/caddyproxymanager/pkg/models"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // Client handles communication with Caddy Admin API
@@ -100,8 +101,8 @@ func (c *Client) AddProxy(proxy models.Proxy) error {
 		return fmt.Errorf("invalid target URL: %v", err)
 	}
 
-	// Create handler with upstreams
-	handler := models.CaddyHandler{
+	// Create reverse proxy handler with upstreams
+	reverseProxyHandler := models.CaddyHandler{
 		Handler: "reverse_proxy",
 		Upstreams: []models.CaddyUpstream{
 			{Dial: dialAddr},
@@ -118,36 +119,66 @@ func (c *Client) AddProxy(proxy models.Proxy) error {
 
 	// Add custom headers if provided
 	if len(proxy.CustomHeaders) > 0 {
-		if handler.Headers == nil {
-			handler.Headers = &models.CaddyHeaders{
+		if reverseProxyHandler.Headers == nil {
+			reverseProxyHandler.Headers = &models.CaddyHeaders{
 				Request: &models.CaddyHeadersRequest{
 					Set: make(map[string][]string),
 				},
 			}
-		} else if handler.Headers.Request == nil {
-			handler.Headers.Request = &models.CaddyHeadersRequest{
+		} else if reverseProxyHandler.Headers.Request == nil {
+			reverseProxyHandler.Headers.Request = &models.CaddyHeadersRequest{
 				Set: make(map[string][]string),
 			}
 		}
 
 		// Add custom headers to the existing Host header
 		for key, value := range proxy.CustomHeaders {
-			handler.Headers.Request.Set[key] = []string{value}
+			reverseProxyHandler.Headers.Request.Set[key] = []string{value}
 		}
 	}
 
 	// Add HTTPS transport if target uses HTTPS
 	if useHTTPS {
-		handler.Transport = &models.CaddyTransport{
+		reverseProxyHandler.Transport = &models.CaddyTransport{
 			Protocol: "http",
 			TLS:      &struct{}{},
 		}
 	}
 
+	// Prepare handlers array
+	handlers := []models.CaddyHandler{}
+
+	// Add basic auth handler if enabled
+	if proxy.BasicAuth != nil && proxy.BasicAuth.Enabled && proxy.BasicAuth.Username != "" && proxy.BasicAuth.Password != "" {
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(proxy.BasicAuth.Password), bcrypt.DefaultCost)
+		if err != nil {
+			return fmt.Errorf("failed to hash password: %v", err)
+		}
+
+		basicAuthHandler := models.CaddyHandler{
+			Handler: "authentication",
+			Providers: map[string]models.CaddyAuthProvider{
+				"http_basic": {
+					Accounts: []models.CaddyAccount{
+						{
+							Username: proxy.BasicAuth.Username,
+							Password: string(hashedPassword),
+						},
+					},
+				},
+			},
+		}
+
+		handlers = append(handlers, basicAuthHandler)
+	}
+
+	// Add the reverse proxy handler
+	handlers = append(handlers, reverseProxyHandler)
+
 	// Add new route for this proxy
 	newRoute := models.CaddyRoute{
 		ID:     proxy.ID,
-		Handle: []models.CaddyHandler{handler},
+		Handle: handlers,
 	}
 
 	// Only add host matcher for domain names without ports
@@ -420,59 +451,71 @@ func (c *Client) ParseProxiesFromConfig(config *models.CaddyConfig) []models.Pro
 
 	for serverName, server := range config.Apps.HTTP.Servers {
 		for _, route := range server.Routes {
-			if len(route.Handle) > 0 && route.Handle[0].Handler == "reverse_proxy" {
-				// Skip routes without IDs (not created by proxy manager)
-				if route.ID == "" {
-					continue
-				}
-
-				proxy := models.Proxy{
-					ID:        route.ID,
-					Status:    "active",
-					CreatedAt: "2024-01-01T00:00:00Z", // Default timestamp for existing proxies
-					UpdatedAt: "2024-01-01T00:00:00Z", // Default timestamp for existing proxies
-				}
-
-				// Extract domain from match or proxy ID
-				if len(route.Match) > 0 && len(route.Match[0].Host) > 0 {
-					proxy.Domain = route.Match[0].Host[0]
-				} else {
-					// For port-based proxies, extract domain from ID
-					// ID format: "proxy_localhost:9801_1755490936"
-					if strings.HasPrefix(route.ID, "proxy_") {
-						parts := strings.Split(route.ID, "_")
-						if len(parts) >= 3 {
-							// Reconstruct domain from parts (handling colons in domain)
-							domainParts := parts[1 : len(parts)-1]
-							proxy.Domain = strings.Join(domainParts, "_")
-							// Replace underscores back to colons for port-based domains
-							proxy.Domain = strings.ReplaceAll(proxy.Domain, "_", ":")
-						}
-					}
-				}
-
-				// Extract target URL from upstreams
-				if len(route.Handle[0].Upstreams) > 0 {
-					dial := route.Handle[0].Upstreams[0].Dial
-					// Determine scheme based on port or default to http
-					scheme := "http"
-					if strings.HasSuffix(dial, ":443") {
-						scheme = "https"
-					}
-					proxy.TargetURL = fmt.Sprintf("%s://%s", scheme, dial)
-				}
-
-				// Determine SSL mode based on server configuration
-				hasHTTPS := slices.Contains(server.Listen, ":443")
-
-				if serverName == "http_only" || !hasHTTPS {
-					proxy.SSLMode = "none"
-				} else {
-					proxy.SSLMode = "auto"
-				}
-
-				proxies = append(proxies, proxy)
+			// Skip routes without IDs (not created by proxy manager)
+			if route.ID == "" {
+				continue
 			}
+			
+			// Find the reverse_proxy handler (might not be the first one due to authentication)
+			var reverseProxyHandler *models.CaddyHandler
+			for _, handler := range route.Handle {
+				if handler.Handler == "reverse_proxy" {
+					reverseProxyHandler = &handler
+					break
+				}
+			}
+			
+			// Skip if no reverse_proxy handler found
+			if reverseProxyHandler == nil {
+				continue
+			}
+
+			proxy := models.Proxy{
+				ID:        route.ID,
+				Status:    "active",
+				CreatedAt: "2024-01-01T00:00:00Z", // Default timestamp for existing proxies
+				UpdatedAt: "2024-01-01T00:00:00Z", // Default timestamp for existing proxies
+			}
+
+			// Extract domain from match or proxy ID
+			if len(route.Match) > 0 && len(route.Match[0].Host) > 0 {
+				proxy.Domain = route.Match[0].Host[0]
+			} else {
+				// For port-based proxies, extract domain from ID
+				// ID format: "proxy_localhost:9801_1755490936"
+				if strings.HasPrefix(route.ID, "proxy_") {
+					parts := strings.Split(route.ID, "_")
+					if len(parts) >= 3 {
+						// Reconstruct domain from parts (handling colons in domain)
+						domainParts := parts[1 : len(parts)-1]
+						proxy.Domain = strings.Join(domainParts, "_")
+						// Replace underscores back to colons for port-based domains
+						proxy.Domain = strings.ReplaceAll(proxy.Domain, "_", ":")
+					}
+				}
+			}
+
+			// Extract target URL from upstreams
+			if len(reverseProxyHandler.Upstreams) > 0 {
+				dial := reverseProxyHandler.Upstreams[0].Dial
+				// Determine scheme based on port or default to http
+				scheme := "http"
+				if strings.HasSuffix(dial, ":443") {
+					scheme = "https"
+				}
+				proxy.TargetURL = fmt.Sprintf("%s://%s", scheme, dial)
+			}
+
+			// Determine SSL mode based on server configuration
+			hasHTTPS := slices.Contains(server.Listen, ":443")
+
+			if serverName == "http_only" || !hasHTTPS {
+				proxy.SSLMode = "none"
+			} else {
+				proxy.SSLMode = "auto"
+			}
+
+			proxies = append(proxies, proxy)
 		}
 	}
 
