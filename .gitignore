@@ -3,3 +3,4 @@ backend/server
 backend/static/
 backend/data/
 .playwright-mcp/
+bin/
