@@ -1,6 +1,6 @@
 package models
 
-// CaddyConfig represents the Caddy JSON configuration structure
+// CaddyConfig represents the Caddy JSON configuration structure.
 type CaddyConfig struct {
 	Apps CaddyApps `json:"apps"`
 }
@@ -36,10 +36,10 @@ type CaddyMatch struct {
 }
 
 type CaddyHandler struct {
-	Handler   string                     `json:"handler"`
-	Upstreams []CaddyUpstream            `json:"upstreams,omitempty"`
-	Transport *CaddyTransport            `json:"transport,omitempty"`
-	Headers   *CaddyHeaders              `json:"headers,omitempty"`
+	Handler   string                       `json:"handler"`
+	Upstreams []CaddyUpstream              `json:"upstreams,omitempty"`
+	Transport *CaddyTransport              `json:"transport,omitempty"`
+	Headers   *CaddyHeaders                `json:"headers,omitempty"`
 	Providers map[string]CaddyAuthProvider `json:"providers,omitempty"` // For basic auth - must be a map
 }
 

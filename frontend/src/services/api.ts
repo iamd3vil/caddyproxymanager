@@ -8,6 +8,10 @@ export interface Proxy {
   dns_credentials?: Record<string, string>
   custom_headers?: Record<string, string>
   basic_auth?: { enabled: boolean; username: string; password: string } | null
+  health_check_enabled?: boolean
+  health_check_interval?: string
+  health_check_path?: string
+  health_check_expected_status?: number
   status?: string
   created_at: string
   updated_at: string
@@ -101,6 +105,10 @@ class ApiClient {
     dns_credentials?: Record<string, string>
     custom_headers?: Record<string, string>
     basic_auth?: { enabled: boolean; username: string; password: string } | null
+    health_check_enabled?: boolean
+    health_check_interval?: string
+    health_check_path?: string
+    health_check_expected_status?: number
   }): Promise<ApiResponse<Proxy>> {
     return this.request('/api/proxies', {
       method: 'POST',
@@ -119,6 +127,10 @@ class ApiClient {
       dns_credentials?: Record<string, string>
       custom_headers?: Record<string, string>
       basic_auth?: { enabled: boolean; username: string; password: string } | null
+      health_check_enabled?: boolean
+      health_check_interval?: string
+      health_check_path?: string
+      health_check_expected_status?: number
     }
   ): Promise<ApiResponse<Proxy>> {
     return this.request(`/api/proxies/${id}`, {
@@ -131,6 +143,10 @@ class ApiClient {
     return this.request(`/api/proxies/${id}`, {
       method: 'DELETE',
     })
+  }
+
+  async getProxyStatus(id: string): Promise<ApiResponse<{ status: string; last_checked: string; message: string }>> {
+    return this.request(`/api/proxies/${id}/status`)
   }
 
   async getStatus(): Promise<ApiResponse<StatusResponse>> {

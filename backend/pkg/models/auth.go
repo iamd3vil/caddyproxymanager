@@ -37,6 +37,6 @@ type AuthResponse struct {
 }
 
 type StatusResponse struct {
-	IsSetup   bool `json:"is_setup"`
+	IsSetup     bool `json:"is_setup"`
 	AuthEnabled bool `json:"auth_enabled"`
 }

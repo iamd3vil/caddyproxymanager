@@ -2,11 +2,12 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -15,58 +16,99 @@ import (
 	"github.com/sarat/caddyproxymanager/internal/handlers"
 	"github.com/sarat/caddyproxymanager/pkg/auth"
 	"github.com/sarat/caddyproxymanager/pkg/caddy"
+	"github.com/sarat/caddyproxymanager/pkg/health"
 )
 
-func main() {
-	// Create WaitGroup to track goroutines
-	var wg sync.WaitGroup
+const (
+	magicNumber60            = 60
+	magicNumber20            = 20
+	readHeaderTimeoutSeconds = 30
+	shutdownTimeoutSeconds   = 30
+	defaultPort              = "8080"
+	defaultCaddyAdminURL     = "http://localhost:2019"
+	defaultDataDir           = "./data"
+	defaultStaticDir         = "./static/"
+	sessionCleanupInterval   = 1 * time.Hour
+)
 
-	// Set up signal handling for graceful shutdown
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
+type serverConfig struct {
+	port          string
+	caddyAdminURL string
+	dataDir       string
+	configFile    string
+	staticDir     string
+}
 
+func getServerConfig() *serverConfig {
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080"
+		port = defaultPort
 	}
 
-	// Initialize Caddy client - assuming Caddy admin API runs on localhost:2019
 	caddyAdminURL := os.Getenv("CADDY_ADMIN_URL")
 	if caddyAdminURL == "" {
-		caddyAdminURL = "http://localhost:2019"
+		caddyAdminURL = defaultCaddyAdminURL
 	}
 
-	// Config file path for persistence
-	configFile := os.Getenv("CADDY_CONFIG_FILE")
-	if configFile == "" {
-		configFile = "./caddy-config.json"
-	}
-
-	caddyClient := caddy.New(caddyAdminURL, configFile)
-
-	// Try to restore configuration from file on startup
-	if err := caddyClient.RestoreConfigFromFile(); err != nil {
-		fmt.Printf("Warning: Could not restore config from file: %v\n", err)
-		fmt.Println("Starting with empty configuration...")
-	} else {
-		fmt.Printf("Configuration restored from: %s\n", configFile)
-	}
-
-	// Initialize auth storage
 	dataDir := os.Getenv("DATA_DIR")
 	if dataDir == "" {
-		dataDir = "./data"
+		dataDir = defaultDataDir
 	}
 
-	authStorage := auth.NewStorage(dataDir)
-	if err := authStorage.Initialize(); err != nil {
-		log.Fatalf("Failed to initialize auth storage: %v", err)
+	staticDir := os.Getenv("STATIC_DIR")
+	if staticDir == "" {
+		staticDir = defaultStaticDir
 	}
 
-	// Start session cleanup goroutine
-	wg.Go(func() {
-		ticker := time.NewTicker(1 * time.Hour)
+	return &serverConfig{
+		port:          port,
+		caddyAdminURL: caddyAdminURL,
+		dataDir:       dataDir,
+		configFile:    filepath.Join(dataDir, "caddy-config.json"),
+		staticDir:     staticDir,
+	}
+}
+
+func initializeCaddy(cfg *serverConfig) *caddy.Client {
+	caddyClient := caddy.New(cfg.caddyAdminURL, cfg.configFile)
+
+	if err := caddyClient.RestoreConfigFromFile(); err != nil {
+		log.Printf("Warning: Could not restore config from file: %v\n", err)
+		log.Println("Starting with empty configuration...")
+	} else {
+		log.Printf("Configuration restored from: %s\n", cfg.configFile)
+	}
+
+	return caddyClient
+}
+
+func startHealthChecks(caddyClient *caddy.Client, healthService *health.Service) {
+	config, err := caddyClient.GetConfig()
+	if err != nil {
+		return
+	}
+
+	proxies := caddyClient.ParseProxiesFromConfig(config)
+	for _, proxy := range proxies {
+		if proxy.HealthCheckEnabled {
+			if err := healthService.StartHealthCheck(proxy); err != nil {
+				log.Printf("Warning: Failed to start health check for proxy %s: %v\n", proxy.ID, err)
+			}
+		}
+	}
+
+	log.Printf("Started health checks for %d proxies\n", len(proxies))
+}
+
+func startSessionCleanup(ctx context.Context, authStorage *auth.Storage, waitGroup *sync.WaitGroup) {
+	waitGroup.Add(1)
+
+	tickerFunc := func() {
+		defer waitGroup.Done()
+
+		ticker := time.NewTicker(sessionCleanupInterval)
 		defer ticker.Stop()
+
 		for {
 			select {
 			case <-ticker.C:
@@ -74,21 +116,23 @@ func main() {
 					log.Printf("Failed to clean expired sessions: %v", err)
 				}
 			case <-ctx.Done():
-				fmt.Println("Session cleanup goroutine shutting down...")
+				log.Println("Session cleanup goroutine shutting down...")
+
 				return
 			}
 		}
-	})
+	}
 
-	handler := handlers.New(caddyClient)
-	authHandler := handlers.NewAuthHandler(authStorage)
-	authMiddleware := auth.NewMiddleware(authStorage)
+	go tickerFunc()
+}
 
-	mux := http.NewServeMux()
-
-	// Enable CORS for all routes
-	corsHandler := authMiddleware.CORS
-
+func setupRoutes(
+	mux *http.ServeMux,
+	handler *handlers.Handler,
+	authHandler *handlers.AuthHandler,
+	corsHandler func(http.HandlerFunc) http.HandlerFunc,
+	authMiddleware *auth.Middleware,
+) {
 	// Public auth routes
 	mux.HandleFunc("GET /api/auth/status", corsHandler(authHandler.Status))
 	mux.HandleFunc("POST /api/auth/setup", corsHandler(authHandler.Setup))
@@ -102,76 +146,132 @@ func main() {
 	mux.HandleFunc("POST /api/proxies", corsHandler(authMiddleware.RequireAuth(handler.CreateProxy)))
 	mux.HandleFunc("PUT /api/proxies/{id}", corsHandler(authMiddleware.RequireAuth(handler.UpdateProxy)))
 	mux.HandleFunc("DELETE /api/proxies/{id}", corsHandler(authMiddleware.RequireAuth(handler.DeleteProxy)))
+	mux.HandleFunc("GET /api/proxies/{id}/status", corsHandler(authMiddleware.RequireAuth(handler.GetProxyStatus)))
 	mux.HandleFunc("GET /api/status", corsHandler(authMiddleware.RequireAuth(handler.Status)))
 	mux.HandleFunc("POST /api/reload", corsHandler(authMiddleware.RequireAuth(handler.Reload)))
+}
 
-	// Static file serving for SPA
-	staticDir := os.Getenv("STATIC_DIR")
-	if staticDir == "" {
-		staticDir = "./static/" // Default for development
-	}
+func setupStaticHandler(mux *http.ServeMux, staticDir string, corsHandler func(http.HandlerFunc) http.HandlerFunc) {
+	fileServer := http.FileServer(http.Dir(staticDir))
 
-	// Create file server for static files
-	fs := http.FileServer(http.Dir(staticDir))
+	mux.HandleFunc("/", corsHandler(func(writer http.ResponseWriter, request *http.Request) {
+		if strings.HasPrefix(request.URL.Path, "/api/") {
+			http.NotFound(writer, request)
 
-	// Handle SPA routing - serve index.html for non-API routes
-	mux.HandleFunc("/", corsHandler(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/") {
-			http.NotFound(w, r)
 			return
 		}
 
-		// Check if the file exists, otherwise serve index.html
-		if r.URL.Path != "/" {
-			if _, err := os.Stat(staticDir + r.URL.Path); os.IsNotExist(err) {
-				r.URL.Path = "/"
+		if request.URL.Path != "/" {
+			if _, err := os.Stat(staticDir + request.URL.Path); os.IsNotExist(err) {
+				request.URL.Path = "/"
 			}
 		}
 
-		fs.ServeHTTP(w, r)
+		fileServer.ServeHTTP(writer, request)
 	}))
+}
 
-	// Create HTTP server
-	server := &http.Server{
-		Addr:    ":" + port,
-		Handler: mux,
+func createServer(port string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:                         ":" + port,
+		Handler:                      handler,
+		ReadHeaderTimeout:            readHeaderTimeoutSeconds * time.Second,
+		ReadTimeout:                  magicNumber60 * time.Second,
+		WriteTimeout:                 magicNumber60 * time.Second,
+		IdleTimeout:                  magicNumber60 * time.Second,
+		MaxHeaderBytes:               1 << magicNumber20,
+		DisableGeneralOptionsHandler: false,
+		TLSConfig:                    nil,
+		TLSNextProto:                 nil,
+		ConnState:                    nil,
+		ErrorLog:                     nil,
+		BaseContext:                  nil,
+		ConnContext:                  nil,
+		HTTP2:                        nil,
+		Protocols:                    nil,
 	}
+}
 
-	// Start server in a goroutine
-	wg.Go(func() {
-		fmt.Printf("Server starting on port %s\n", port)
-		fmt.Printf("Caddy Admin API: %s\n", caddyAdminURL)
-		fmt.Printf("Config file: %s\n", configFile)
-		fmt.Printf("Data directory: %s\n", dataDir)
+func startServer(server *http.Server, cfg *serverConfig, waitGroup *sync.WaitGroup) {
+	waitGroup.Add(1)
+
+	serverFunc := func() {
+		defer waitGroup.Done()
+		log.Printf("Server starting on port %s\n", cfg.port)
+		log.Printf("Caddy Admin API: %s\n", cfg.caddyAdminURL)
+		log.Printf("Config file: %s\n", cfg.configFile)
+		log.Printf("Data directory: %s\n", cfg.dataDir)
+
 		if os.Getenv("DISABLE_AUTH") == "true" {
-			fmt.Println("Authentication: DISABLED")
+			log.Println("Authentication: DISABLED")
 		} else {
-			fmt.Println("Authentication: ENABLED")
+			log.Println("Authentication: ENABLED")
 		}
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("Server failed to start: %v", err)
 		}
-	})
+	}
 
-	// Wait for interrupt signal
-	<-ctx.Done()
-	fmt.Println("\nShutdown signal received, initiating graceful shutdown...")
+	go serverFunc()
+}
 
-	// Cancel context to signal goroutines to stop
+func initializeAuthStorage(dataDir string) *auth.Storage {
+	authStorage := auth.NewStorage(dataDir)
+	if err := authStorage.Initialize(); err != nil {
+		log.Fatalf("Failed to initialize auth storage: %v", err)
+	}
+
+	return authStorage
+}
+
+func gracefulShutdown(server *http.Server, waitGroup *sync.WaitGroup, cancel context.CancelFunc) {
+	log.Println("\nShutdown signal received, initiating graceful shutdown...")
 	cancel()
 
-	// Shutdown HTTP server
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeoutSeconds*time.Second)
 	defer shutdownCancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Printf("HTTP server shutdown error: %v", err)
 	} else {
-		fmt.Println("HTTP server gracefully stopped")
+		log.Println("HTTP server gracefully stopped")
 	}
 
-	// Wait for all goroutines to finish
-	fmt.Println("Waiting for goroutines to finish...")
-	wg.Wait()
-	fmt.Println("All goroutines finished, graceful shutdown completed")
+	log.Println("Waiting for goroutines to finish...")
+	waitGroup.Wait()
+	log.Println("All goroutines finished, graceful shutdown completed")
+}
+
+func main() {
+	var waitGroup sync.WaitGroup
+
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	cfg := getServerConfig()
+	caddyClient := initializeCaddy(cfg)
+
+	healthService := health.NewService()
+	startHealthChecks(caddyClient, healthService)
+
+	authStorage := initializeAuthStorage(cfg.dataDir)
+
+	startSessionCleanup(ctx, authStorage, &waitGroup)
+
+	handler := handlers.New(caddyClient, healthService)
+	authHandler := handlers.NewAuthHandler(authStorage)
+	authMiddleware := auth.NewMiddleware(authStorage)
+
+	mux := http.NewServeMux()
+	corsHandler := authMiddleware.CORS
+
+	setupRoutes(mux, handler, authHandler, corsHandler, authMiddleware)
+	setupStaticHandler(mux, cfg.staticDir, corsHandler)
+
+	server := createServer(cfg.port, mux)
+	startServer(server, cfg, &waitGroup)
+
+	<-ctx.Done()
+	gracefulShutdown(server, &waitGroup, cancel)
 }

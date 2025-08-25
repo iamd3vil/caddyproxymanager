@@ -16,7 +16,11 @@ const formData = ref({
   dns_provider: 'cloudflare',
   dns_credentials: {} as Record<string, string>,
   custom_headers: {} as Record<string, string>,
-  basic_auth: null as { enabled: boolean; username: string; password: string } | null
+  basic_auth: null as { enabled: boolean; username: string; password: string } | null,
+  health_check_enabled: false,
+  health_check_interval: '30s',
+  health_check_path: '/',
+  health_check_expected_status: 200
 })
 
 const newHeaderKey = ref('')
@@ -62,7 +66,11 @@ const addProxy = async () => {
       dns_provider: 'cloudflare', 
       dns_credentials: {} as Record<string, string>,
       custom_headers: {} as Record<string, string>,
-      basic_auth: null as { enabled: boolean; username: string; password: string } | null
+      basic_auth: null as { enabled: boolean; username: string; password: string } | null,
+      health_check_enabled: false,
+      health_check_interval: '30s',
+      health_check_path: '/',
+      health_check_expected_status: 200
     }
     await loadProxies()
   }
@@ -126,6 +134,32 @@ const getProxyType = (proxy: Proxy): string => {
     return protocol.toUpperCase()
   } catch {
     return 'HTTP'
+  }
+}
+
+const getHealthStatusClass = (status?: string): string => {
+  switch (status) {
+    case 'Healthy':
+      return 'badge-success'
+    case 'Unhealthy':
+      return 'badge-error'
+    case 'Pending':
+      return 'badge-warning'
+    default:
+      return 'badge-outline'
+  }
+}
+
+const getHealthStatusIcon = (status?: string): string => {
+  switch (status) {
+    case 'Healthy':
+      return '●'
+    case 'Unhealthy':
+      return '●'
+    case 'Pending':
+      return '●'
+    default:
+      return '○'
   }
 }
 
@@ -256,7 +290,11 @@ onMounted(() => {
 
               <div class="flex gap-2 flex-wrap">
                 <div class="badge badge-secondary">{{ getSSLMode(proxy) }}</div>
-                <div v-if="proxy.status" class="badge badge-success">{{ proxy.status }}</div>
+                <div v-if="proxy.health_check_enabled && proxy.status" 
+                     :class="`badge ${getHealthStatusClass(proxy.status)}`"
+                     :title="`Health: ${proxy.status}`">
+                  {{ getHealthStatusIcon(proxy.status) }} {{ proxy.status }}
+                </div>
                 <div class="badge badge-outline">{{ getProxyType(proxy) }}</div>
               </div>
             </div>
@@ -432,6 +470,68 @@ onMounted(() => {
 
           <!-- Advanced Tab -->
           <div v-show="activeTab === 'advanced'" class="space-y-6">
+            <!-- Health Check Section -->
+            <div>
+              <h4 class="font-semibold text-base-content mb-2">Health Checks</h4>
+              <p class="text-sm text-base-content/70 mb-4">Monitor the health status of your upstream service</p>
+              
+              <div class="form-control">
+                <label class="label cursor-pointer justify-start gap-3">
+                  <input 
+                    type="checkbox" 
+                    class="checkbox checkbox-primary" 
+                    v-model="formData.health_check_enabled"
+                  />
+                  <span class="label-text font-medium">Enable Health Checks</span>
+                </label>
+              </div>
+
+              <div v-if="formData.health_check_enabled" class="mt-4 space-y-4 p-4 bg-base-200 rounded-lg">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div class="form-control">
+                    <label class="label pb-2">
+                      <span class="label-text font-medium">Check Interval</span>
+                    </label>
+                    <select v-model="formData.health_check_interval" class="select select-bordered w-full">
+                      <option value="10s">10 seconds</option>
+                      <option value="30s">30 seconds</option>
+                      <option value="1m">1 minute</option>
+                      <option value="2m">2 minutes</option>
+                      <option value="5m">5 minutes</option>
+                    </select>
+                  </div>
+
+                  <div class="form-control">
+                    <label class="label pb-2">
+                      <span class="label-text font-medium">Expected Status Code</span>
+                    </label>
+                    <input 
+                      v-model.number="formData.health_check_expected_status"
+                      type="number" 
+                      class="input input-bordered w-full"
+                      min="100"
+                      max="599"
+                    />
+                  </div>
+                </div>
+
+                <div class="form-control">
+                  <label class="label pb-2">
+                    <span class="label-text font-medium">Health Check Path</span>
+                  </label>
+                  <input 
+                    v-model="formData.health_check_path"
+                    type="text" 
+                    placeholder="/health" 
+                    class="input input-bordered w-full"
+                  />
+                  <div class="label">
+                    <span class="label-text-alt">Path to check on your upstream service (e.g., /health, /status, /)</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <!-- Basic Authentication Section -->
             <div>
               <h4 class="font-semibold text-base-content mb-2">Basic Authentication</h4>

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -16,21 +17,73 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// Constants for repeated strings
+const (
+	SSLModeAuto = "auto"
+	SSLModeNone = "none"
+	AuthTrue    = "true"
+)
+
 // Client handles communication with Caddy Admin API
 type Client struct {
-	BaseURL    string
-	Client     *http.Client
-	ConfigFile string
+	BaseURL      string
+	Client       *http.Client
+	ConfigFile   string
+	MetadataFile string
+	metadata     *models.MetadataStore
 }
 
 // New creates a new Caddy API client
 func New(baseURL, configFile string) *Client {
-	return &Client{
-		BaseURL:    baseURL,
-		ConfigFile: configFile,
+	dir := filepath.Dir(configFile)
+	base := strings.TrimSuffix(filepath.Base(configFile), ".json")
+	metadataFile := filepath.Join(dir, base+"-metadata.json")
+	client := &Client{
+		BaseURL:      baseURL,
+		ConfigFile:   configFile,
+		MetadataFile: metadataFile,
+		metadata:     models.NewMetadataStore(),
 		Client: &http.Client{
 			Timeout: 10 * time.Second,
 		},
+	}
+
+	// Load existing metadata
+	if err := client.loadMetadataFromFile(); err != nil {
+		fmt.Printf("Warning: Failed to load metadata: %v\n", err)
+	}
+
+	return client
+}
+
+// configureDNSProviderCredentials configures DNS provider credentials with environment fallback
+func configureDNSProviderCredentials(dnsProvider *models.CaddyDNSProvider, proxy models.Proxy) {
+	switch proxy.DNSProvider {
+	case "cloudflare":
+		// Use provided credentials or fall back to environment variables
+		if apiToken, ok := proxy.DNSCredentials["api_token"]; ok && apiToken != "" {
+			dnsProvider.APIToken = apiToken
+		} else if envToken := os.Getenv("CLOUDFLARE_API_TOKEN"); envToken != "" {
+			dnsProvider.APIToken = envToken
+		}
+
+		if email, ok := proxy.DNSCredentials["email"]; ok && email != "" {
+			dnsProvider.Email = email
+		} else if envEmail := os.Getenv("CLOUDFLARE_EMAIL"); envEmail != "" {
+			dnsProvider.Email = envEmail
+		}
+	case "digitalocean":
+		if authToken, ok := proxy.DNSCredentials["auth_token"]; ok && authToken != "" {
+			dnsProvider.AuthToken = authToken
+		} else if envToken := os.Getenv("DO_AUTH_TOKEN"); envToken != "" {
+			dnsProvider.AuthToken = envToken
+		}
+	case "duckdns":
+		if token, ok := proxy.DNSCredentials["token"]; ok && token != "" {
+			dnsProvider.Token = token
+		} else if envToken := os.Getenv("DUCKDNS_TOKEN"); envToken != "" {
+			dnsProvider.Token = envToken
+		}
 	}
 }
 
@@ -73,7 +126,7 @@ func (c *Client) AddProxy(proxy models.Proxy) error {
 	var serverName string
 	var listenPorts []string
 
-	if proxy.SSLMode == "none" {
+	if proxy.SSLMode == SSLModeNone {
 		serverName = "http_only"
 		listenPorts = []string{":80"}
 		// Add specific port if domain includes port number
@@ -200,7 +253,7 @@ func (c *Client) AddProxy(proxy models.Proxy) error {
 		}
 
 		// Add DNS challenge TLS policy if needed
-		if proxy.SSLMode == "auto" && proxy.ChallengeType == "dns" {
+		if proxy.SSLMode == SSLModeAuto && proxy.ChallengeType == "dns" {
 			tlsPolicy := c.createDNSChallengeTLSPolicy(proxy)
 			if tlsPolicy != nil {
 				server.TLSPolicies = append(server.TLSPolicies, *tlsPolicy)
@@ -216,14 +269,14 @@ func (c *Client) AddProxy(proxy models.Proxy) error {
 		}
 
 		// Disable automatic HTTPS for HTTP-only servers
-		if proxy.SSLMode == "none" {
+		if proxy.SSLMode == SSLModeNone {
 			newServer.AutomaticHTTPS = &models.CaddyAutomaticHTTPS{
 				Disable: true,
 			}
 		}
 
 		// Add DNS challenge TLS policy if needed
-		if proxy.SSLMode == "auto" && proxy.ChallengeType == "dns" {
+		if proxy.SSLMode == SSLModeAuto && proxy.ChallengeType == "dns" {
 			tlsPolicy := c.createDNSChallengeTLSPolicy(proxy)
 			if tlsPolicy != nil {
 				newServer.TLSPolicies = []models.CaddyTLSPolicy{*tlsPolicy}
@@ -241,6 +294,12 @@ func (c *Client) AddProxy(proxy models.Proxy) error {
 		c.configureDNSChallenge(config, proxy)
 	}
 
+	// Save metadata
+	c.metadata.Set(proxy)
+	if err := c.saveMetadataToFile(); err != nil {
+		fmt.Printf("Warning: Failed to save metadata: %v\n", err)
+	}
+
 	// Update Caddy configuration
 	return c.updateConfig(config)
 }
@@ -256,6 +315,11 @@ func (c *Client) UpdateProxy(proxy models.Proxy) error {
 
 // DeleteProxy removes a proxy configuration from Caddy
 func (c *Client) DeleteProxy(id string) error {
+	// Remove metadata
+	c.metadata.Delete(id)
+	if err := c.saveMetadataToFile(); err != nil {
+		fmt.Printf("Warning: Failed to save metadata: %v\n", err)
+	}
 	// Get current config to find which server contains the route
 	config, err := c.GetConfig()
 	if err != nil || config.Apps.HTTP.Servers == nil {
@@ -373,7 +437,7 @@ func (c *Client) saveConfigToFile(config *models.CaddyConfig) error {
 		return fmt.Errorf("failed to marshal config: %v", err)
 	}
 
-	if err := os.WriteFile(c.ConfigFile, configJSON, 0644); err != nil {
+	if err := os.WriteFile(c.ConfigFile, configJSON, 0600); err != nil {
 		return fmt.Errorf("failed to write config file: %v", err)
 	}
 
@@ -455,7 +519,7 @@ func (c *Client) ParseProxiesFromConfig(config *models.CaddyConfig) []models.Pro
 			if route.ID == "" {
 				continue
 			}
-			
+
 			// Find the reverse_proxy handler (might not be the first one due to authentication)
 			var reverseProxyHandler *models.CaddyHandler
 			for _, handler := range route.Handle {
@@ -464,7 +528,7 @@ func (c *Client) ParseProxiesFromConfig(config *models.CaddyConfig) []models.Pro
 					break
 				}
 			}
-			
+
 			// Skip if no reverse_proxy handler found
 			if reverseProxyHandler == nil {
 				continue
@@ -476,6 +540,9 @@ func (c *Client) ParseProxiesFromConfig(config *models.CaddyConfig) []models.Pro
 				CreatedAt: "2024-01-01T00:00:00Z", // Default timestamp for existing proxies
 				UpdatedAt: "2024-01-01T00:00:00Z", // Default timestamp for existing proxies
 			}
+
+			// Apply stored metadata
+			c.metadata.ApplyToProxy(&proxy)
 
 			// Extract domain from match or proxy ID
 			if len(route.Match) > 0 && len(route.Match[0].Host) > 0 {
@@ -572,32 +639,7 @@ func (c *Client) createDNSChallengeTLSPolicy(proxy models.Proxy) *models.CaddyTL
 	}
 
 	// Set provider-specific credentials with environment variable fallback
-	switch proxy.DNSProvider {
-	case "cloudflare":
-		// Use provided credentials or fall back to environment variables
-		if apiToken, ok := proxy.DNSCredentials["api_token"]; ok && apiToken != "" {
-			dnsProvider.APIToken = apiToken
-		} else if envToken := os.Getenv("CLOUDFLARE_API_TOKEN"); envToken != "" {
-			dnsProvider.APIToken = envToken
-		}
-		if email, ok := proxy.DNSCredentials["email"]; ok && email != "" {
-			dnsProvider.Email = email
-		} else if envEmail := os.Getenv("CLOUDFLARE_EMAIL"); envEmail != "" {
-			dnsProvider.Email = envEmail
-		}
-	case "digitalocean":
-		if authToken, ok := proxy.DNSCredentials["auth_token"]; ok && authToken != "" {
-			dnsProvider.AuthToken = authToken
-		} else if envToken := os.Getenv("DO_AUTH_TOKEN"); envToken != "" {
-			dnsProvider.AuthToken = envToken
-		}
-	case "duckdns":
-		if token, ok := proxy.DNSCredentials["token"]; ok && token != "" {
-			dnsProvider.Token = token
-		} else if envToken := os.Getenv("DUCKDNS_TOKEN"); envToken != "" {
-			dnsProvider.Token = envToken
-		}
-	}
+	configureDNSProviderCredentials(&dnsProvider, proxy)
 
 	// Create the TLS policy with DNS challenge
 	return &models.CaddyTLSPolicy{
@@ -634,31 +676,7 @@ func (c *Client) configureDNSChallenge(config *models.CaddyConfig, proxy models.
 	}
 
 	// Set provider-specific credentials with environment variable fallback
-	switch proxy.DNSProvider {
-	case "cloudflare":
-		if apiToken, ok := proxy.DNSCredentials["api_token"]; ok && apiToken != "" {
-			dnsProvider.APIToken = apiToken
-		} else if envToken := os.Getenv("CLOUDFLARE_API_TOKEN"); envToken != "" {
-			dnsProvider.APIToken = envToken
-		}
-		if email, ok := proxy.DNSCredentials["email"]; ok && email != "" {
-			dnsProvider.Email = email
-		} else if envEmail := os.Getenv("CLOUDFLARE_EMAIL"); envEmail != "" {
-			dnsProvider.Email = envEmail
-		}
-	case "digitalocean":
-		if authToken, ok := proxy.DNSCredentials["auth_token"]; ok && authToken != "" {
-			dnsProvider.AuthToken = authToken
-		} else if envToken := os.Getenv("DO_AUTH_TOKEN"); envToken != "" {
-			dnsProvider.AuthToken = envToken
-		}
-	case "duckdns":
-		if token, ok := proxy.DNSCredentials["token"]; ok && token != "" {
-			dnsProvider.Token = token
-		} else if envToken := os.Getenv("DUCKDNS_TOKEN"); envToken != "" {
-			dnsProvider.Token = envToken
-		}
-	}
+	configureDNSProviderCredentials(&dnsProvider, proxy)
 
 	// Configure the ACME CA with DNS challenge
 	acmeCA := models.CaddyCA{
@@ -672,4 +690,47 @@ func (c *Client) configureDNSChallenge(config *models.CaddyConfig, proxy models.
 
 	// Set the default ACME CA to use DNS challenges
 	config.Apps.TLS.CertificateAuthorities["acme"] = acmeCA
+}
+
+// saveMetadataToFile saves the metadata to a JSON file
+func (c *Client) saveMetadataToFile() error {
+	if c.MetadataFile == "" {
+		return nil // No metadata file specified
+	}
+
+	metadataJSON, err := json.MarshalIndent(c.metadata, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal metadata: %v", err)
+	}
+
+	if err := os.WriteFile(c.MetadataFile, metadataJSON, 0644); err != nil {
+		return fmt.Errorf("failed to write metadata file: %v", err)
+	}
+
+	return nil
+}
+
+// loadMetadataFromFile loads the metadata from a JSON file
+func (c *Client) loadMetadataFromFile() error {
+	if c.MetadataFile == "" {
+		return nil // No metadata file specified
+	}
+
+	// Check if metadata file exists
+	if _, err := os.Stat(c.MetadataFile); os.IsNotExist(err) {
+		return nil // Metadata file doesn't exist, use empty store
+	}
+
+	data, err := os.ReadFile(c.MetadataFile)
+	if err != nil {
+		return fmt.Errorf("failed to read metadata file: %v", err)
+	}
+
+	var metadata models.MetadataStore
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return fmt.Errorf("failed to unmarshal metadata: %v", err)
+	}
+
+	c.metadata = &metadata
+	return nil
 }

@@ -15,6 +15,7 @@ type contextKey string
 const (
 	UserContextKey    contextKey = "user"
 	SessionContextKey contextKey = "session"
+	AuthTrue          string     = "true"
 )
 
 type Middleware struct {
@@ -28,7 +29,7 @@ func NewMiddleware(storage *Storage) *Middleware {
 func (m *Middleware) RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Check if auth is disabled
-		if os.Getenv("DISABLE_AUTH") == "true" {
+		if os.Getenv("DISABLE_AUTH") == AuthTrue {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -76,7 +77,7 @@ func (m *Middleware) RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 func (m *Middleware) OptionalAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Check if auth is disabled
-		if os.Getenv("DISABLE_AUTH") == "true" {
+		if os.Getenv("DISABLE_AUTH") == AuthTrue {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -111,7 +112,7 @@ func (m *Middleware) OptionalAuth(next http.HandlerFunc) http.HandlerFunc {
 func (m *Middleware) CheckSetup(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Check if auth is disabled
-		if os.Getenv("DISABLE_AUTH") == "true" {
+		if os.Getenv("DISABLE_AUTH") == AuthTrue {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -126,10 +127,10 @@ func (m *Middleware) CheckSetup(next http.HandlerFunc) http.HandlerFunc {
 				}
 			}
 			// Also allow static files and all frontend routes (SPA routing)
-			if strings.HasPrefix(r.URL.Path, "/static/") || 
-			   r.URL.Path == "/" || 
-			   r.URL.Path == "/index.html" || 
-			   !strings.HasPrefix(r.URL.Path, "/api/") {
+			if strings.HasPrefix(r.URL.Path, "/static/") ||
+				r.URL.Path == "/" ||
+				r.URL.Path == "/index.html" ||
+				!strings.HasPrefix(r.URL.Path, "/api/") {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -161,19 +162,23 @@ func (m *Middleware) CORS(next http.HandlerFunc) http.HandlerFunc {
 func (m *Middleware) unauthorized(w http.ResponseWriter, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
-	json.NewEncoder(w).Encode(models.AuthResponse{
+	if err := json.NewEncoder(w).Encode(models.AuthResponse{
 		Success: false,
 		Message: message,
-	})
+	}); err != nil {
+		// Log error if needed, but response is already written
+	}
 }
 
 func (m *Middleware) forbidden(w http.ResponseWriter, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusForbidden)
-	json.NewEncoder(w).Encode(models.AuthResponse{
+	if err := json.NewEncoder(w).Encode(models.AuthResponse{
 		Success: false,
 		Message: message,
-	})
+	}); err != nil {
+		// Log error if needed, but response is already written
+	}
 }
 
 func GetUserFromContext(ctx context.Context) *models.User {

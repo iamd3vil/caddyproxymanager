@@ -9,16 +9,24 @@ import (
 	"time"
 
 	"github.com/sarat/caddyproxymanager/pkg/caddy"
+	"github.com/sarat/caddyproxymanager/pkg/health"
 	"github.com/sarat/caddyproxymanager/pkg/models"
 )
 
+// Constants for repeated strings
+const (
+	SSLModeAuto = "auto"
+)
+
 type Handler struct {
-	CaddyClient *caddy.Client
+	CaddyClient   *caddy.Client
+	HealthService *health.Service
 }
 
-func New(caddyClient *caddy.Client) *Handler {
+func New(caddyClient *caddy.Client, healthService *health.Service) *Handler {
 	return &Handler{
-		CaddyClient: caddyClient,
+		CaddyClient:   caddyClient,
+		HealthService: healthService,
 	}
 }
 
@@ -42,6 +50,18 @@ func (h *Handler) GetProxies(w http.ResponseWriter, r *http.Request) {
 	// Parse proxies from config
 	proxies := h.CaddyClient.ParseProxiesFromConfig(config)
 
+	// Get all health statuses
+	healthStatuses := h.HealthService.GetAllHealthStatuses()
+
+	// Add health status to each proxy
+	for i := range proxies {
+		if status, exists := healthStatuses[proxies[i].ID]; exists {
+			proxies[i].Status = status.Status
+		} else if proxies[i].HealthCheckEnabled {
+			proxies[i].Status = "Pending"
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(map[string]any{
@@ -55,14 +75,18 @@ func (h *Handler) GetProxies(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) CreateProxy(w http.ResponseWriter, r *http.Request) {
 	var proxyReq struct {
-		Domain         string            `json:"domain"`
-		TargetURL      string            `json:"target_url"`
-		SSLMode        string            `json:"ssl_mode"`
-		ChallengeType  string            `json:"challenge_type"`
-		DNSProvider    string            `json:"dns_provider"`
-		DNSCredentials map[string]string `json:"dns_credentials"`
-		CustomHeaders  map[string]string `json:"custom_headers"`
-		BasicAuth      *models.BasicAuth `json:"basic_auth"`
+		Domain                    string            `json:"domain"`
+		TargetURL                 string            `json:"target_url"`
+		SSLMode                   string            `json:"ssl_mode"`
+		ChallengeType             string            `json:"challenge_type"`
+		DNSProvider               string            `json:"dns_provider"`
+		DNSCredentials            map[string]string `json:"dns_credentials"`
+		CustomHeaders             map[string]string `json:"custom_headers"`
+		BasicAuth                 *models.BasicAuth `json:"basic_auth"`
+		HealthCheckEnabled        bool              `json:"health_check_enabled"`
+		HealthCheckInterval       string            `json:"health_check_interval"`
+		HealthCheckPath           string            `json:"health_check_path"`
+		HealthCheckExpectedStatus int               `json:"health_check_expected_status"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&proxyReq); err != nil {
@@ -78,7 +102,7 @@ func (h *Handler) CreateProxy(w http.ResponseWriter, r *http.Request) {
 
 	// Set defaults if not provided
 	if proxyReq.SSLMode == "" {
-		proxyReq.SSLMode = "auto"
+		proxyReq.SSLMode = SSLModeAuto
 	}
 	if proxyReq.ChallengeType == "" {
 		proxyReq.ChallengeType = "http"
@@ -105,11 +129,29 @@ func (h *Handler) CreateProxy(w http.ResponseWriter, r *http.Request) {
 	proxy.DNSCredentials = proxyReq.DNSCredentials
 	proxy.CustomHeaders = proxyReq.CustomHeaders
 	proxy.BasicAuth = proxyReq.BasicAuth
+	proxy.HealthCheckEnabled = proxyReq.HealthCheckEnabled
+	if proxyReq.HealthCheckInterval != "" {
+		proxy.HealthCheckInterval = proxyReq.HealthCheckInterval
+	}
+	if proxyReq.HealthCheckPath != "" {
+		proxy.HealthCheckPath = proxyReq.HealthCheckPath
+	}
+	if proxyReq.HealthCheckExpectedStatus != 0 {
+		proxy.HealthCheckExpectedStatus = proxyReq.HealthCheckExpectedStatus
+	}
 
 	// Add proxy to Caddy configuration
 	if err := h.CaddyClient.AddProxy(*proxy); err != nil {
 		http.Error(w, fmt.Sprintf(`{"error": "Failed to add proxy to Caddy: %v"}`, err), http.StatusInternalServerError)
 		return
+	}
+
+	// Start health checking if enabled
+	if proxy.HealthCheckEnabled {
+		if err := h.HealthService.StartHealthCheck(*proxy); err != nil {
+			// Log the error but don't fail the request
+			fmt.Printf("Warning: Failed to start health check for proxy %s: %v\n", proxy.ID, err)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -128,14 +170,18 @@ func (h *Handler) UpdateProxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var proxyReq struct {
-		Domain         string            `json:"domain"`
-		TargetURL      string            `json:"target_url"`
-		SSLMode        string            `json:"ssl_mode"`
-		ChallengeType  string            `json:"challenge_type"`
-		DNSProvider    string            `json:"dns_provider"`
-		DNSCredentials map[string]string `json:"dns_credentials"`
-		CustomHeaders  map[string]string `json:"custom_headers"`
-		BasicAuth      *models.BasicAuth `json:"basic_auth"`
+		Domain                    string            `json:"domain"`
+		TargetURL                 string            `json:"target_url"`
+		SSLMode                   string            `json:"ssl_mode"`
+		ChallengeType             string            `json:"challenge_type"`
+		DNSProvider               string            `json:"dns_provider"`
+		DNSCredentials            map[string]string `json:"dns_credentials"`
+		CustomHeaders             map[string]string `json:"custom_headers"`
+		BasicAuth                 *models.BasicAuth `json:"basic_auth"`
+		HealthCheckEnabled        bool              `json:"health_check_enabled"`
+		HealthCheckInterval       string            `json:"health_check_interval"`
+		HealthCheckPath           string            `json:"health_check_path"`
+		HealthCheckExpectedStatus int               `json:"health_check_expected_status"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&proxyReq); err != nil {
@@ -151,7 +197,7 @@ func (h *Handler) UpdateProxy(w http.ResponseWriter, r *http.Request) {
 
 	// Set defaults if not provided
 	if proxyReq.SSLMode == "" {
-		proxyReq.SSLMode = "auto"
+		proxyReq.SSLMode = SSLModeAuto
 	}
 	if proxyReq.ChallengeType == "" {
 		proxyReq.ChallengeType = "http"
@@ -179,12 +225,31 @@ func (h *Handler) UpdateProxy(w http.ResponseWriter, r *http.Request) {
 	proxy.DNSCredentials = proxyReq.DNSCredentials
 	proxy.CustomHeaders = proxyReq.CustomHeaders
 	proxy.BasicAuth = proxyReq.BasicAuth
+	proxy.HealthCheckEnabled = proxyReq.HealthCheckEnabled
+	if proxyReq.HealthCheckInterval != "" {
+		proxy.HealthCheckInterval = proxyReq.HealthCheckInterval
+	}
+	if proxyReq.HealthCheckPath != "" {
+		proxy.HealthCheckPath = proxyReq.HealthCheckPath
+	}
+	if proxyReq.HealthCheckExpectedStatus != 0 {
+		proxy.HealthCheckExpectedStatus = proxyReq.HealthCheckExpectedStatus
+	}
 	proxy.UpdateTimestamp()
 
 	// Update proxy in Caddy configuration
 	if err := h.CaddyClient.UpdateProxy(*proxy); err != nil {
 		http.Error(w, fmt.Sprintf(`{"error": "Failed to update proxy in Caddy: %v"}`, err), http.StatusInternalServerError)
 		return
+	}
+
+	// Restart health checking if enabled, stop if disabled
+	if proxy.HealthCheckEnabled {
+		if err := h.HealthService.StartHealthCheck(*proxy); err != nil {
+			fmt.Printf("Warning: Failed to start health check for proxy %s: %v\n", proxy.ID, err)
+		}
+	} else {
+		h.HealthService.StopHealthCheck(proxy.ID)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -202,6 +267,9 @@ func (h *Handler) DeleteProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Stop health checking for this proxy
+	h.HealthService.StopHealthCheck(id)
+
 	// Remove proxy from Caddy configuration
 	if err := h.CaddyClient.DeleteProxy(id); err != nil {
 		http.Error(w, fmt.Sprintf(`{"error": "Failed to delete proxy from Caddy: %v"}`, err), http.StatusInternalServerError)
@@ -211,6 +279,27 @@ func (h *Handler) DeleteProxy(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write([]byte(fmt.Sprintf(`{"message": "Proxy %s deleted successfully"}`, id))); err != nil {
+		// Log error if needed, but response is already written
+		return
+	}
+}
+
+func (h *Handler) GetProxyStatus(w http.ResponseWriter, r *http.Request) {
+	id := extractIDFromPath(r.URL.Path)
+	if id == "" {
+		http.Error(w, `{"error": "Invalid proxy ID"}`, http.StatusBadRequest)
+		return
+	}
+
+	status, exists := h.HealthService.GetHealthStatus(id)
+	if !exists {
+		http.Error(w, `{"error": "Proxy not found or health check not enabled"}`, http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(status); err != nil {
 		// Log error if needed, but response is already written
 		return
 	}
