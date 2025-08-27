@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -54,6 +55,33 @@ func New(baseURL, configFile string) *Client {
 	}
 
 	return client
+}
+
+// validateIPOrCIDR validates if a string is a valid IP address or CIDR range
+func validateIPOrCIDR(ipOrCIDR string) error {
+	// Try parsing as IP address first
+	if ip := net.ParseIP(ipOrCIDR); ip != nil {
+		return nil
+	}
+	
+	// Try parsing as CIDR range
+	if _, _, err := net.ParseCIDR(ipOrCIDR); err == nil {
+		return nil
+	}
+	
+	return fmt.Errorf("invalid IP address or CIDR range: %s", ipOrCIDR)
+}
+
+// validateIPList validates a list of IP addresses or CIDR ranges
+func validateIPList(ips []string) error {
+	for _, ip := range ips {
+		if ip = strings.TrimSpace(ip); ip != "" {
+			if err := validateIPOrCIDR(ip); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // configureDNSProviderCredentials configures DNS provider credentials with environment fallback
@@ -109,6 +137,14 @@ func (c *Client) GetConfig() (*models.CaddyConfig, error) {
 
 // AddProxy adds a new proxy configuration to Caddy
 func (c *Client) AddProxy(proxy models.Proxy) error {
+	// Validate IP lists
+	if err := validateIPList(proxy.AllowedIPs); err != nil {
+		return fmt.Errorf("invalid allowed IPs: %v", err)
+	}
+	if err := validateIPList(proxy.BlockedIPs); err != nil {
+		return fmt.Errorf("invalid blocked IPs: %v", err)
+	}
+
 	// Get current config
 	config, err := c.GetConfig()
 	if err != nil || config.Apps.HTTP.Servers == nil {
@@ -234,11 +270,64 @@ func (c *Client) AddProxy(proxy models.Proxy) error {
 		Handle: handlers,
 	}
 
+	// Create base matcher
+	baseMatch := models.CaddyMatch{}
+	
 	// Only add host matcher for domain names without ports
 	if !strings.Contains(proxy.Domain, ":") {
-		newRoute.Match = []models.CaddyMatch{
-			{Host: []string{proxy.Domain}},
+		baseMatch.Host = []string{proxy.Domain}
+	}
+
+	// Create additional routes for IP filtering if needed
+	var routeMatches []models.CaddyMatch
+	
+	// Handle AllowedIPs (whitelist)
+	if len(proxy.AllowedIPs) > 0 {
+		// Filter non-empty IPs
+		allowedIPs := make([]string, 0, len(proxy.AllowedIPs))
+		for _, ip := range proxy.AllowedIPs {
+			if ip = strings.TrimSpace(ip); ip != "" {
+				allowedIPs = append(allowedIPs, ip)
+			}
 		}
+		
+		if len(allowedIPs) > 0 {
+			allowMatch := baseMatch
+			allowMatch.RemoteIP = &models.CaddyRemoteIPMatch{
+				Ranges: allowedIPs,
+			}
+			routeMatches = append(routeMatches, allowMatch)
+		}
+	} else if len(proxy.BlockedIPs) > 0 {
+		// Handle BlockedIPs (blacklist) - only if no whitelist is specified
+		// Filter non-empty IPs
+		blockedIPs := make([]string, 0, len(proxy.BlockedIPs))
+		for _, ip := range proxy.BlockedIPs {
+			if ip = strings.TrimSpace(ip); ip != "" {
+				blockedIPs = append(blockedIPs, ip)
+			}
+		}
+		
+		if len(blockedIPs) > 0 {
+			// Create a matcher that allows everything except blocked IPs
+			blockMatch := baseMatch
+			blockMatch.Not = &models.CaddyMatch{
+				RemoteIP: &models.CaddyRemoteIPMatch{
+					Ranges: blockedIPs,
+				},
+			}
+			routeMatches = append(routeMatches, blockMatch)
+		}
+	}
+
+	// If no IP filtering, use base match
+	if len(routeMatches) == 0 && (len(baseMatch.Host) > 0) {
+		routeMatches = append(routeMatches, baseMatch)
+	}
+
+	// Set the match conditions
+	if len(routeMatches) > 0 {
+		newRoute.Match = routeMatches
 	}
 
 	// Add route to appropriate server

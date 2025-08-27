@@ -32,7 +32,13 @@ type CaddyRoute struct {
 }
 
 type CaddyMatch struct {
-	Host []string `json:"host"`
+	Host     []string          `json:"host,omitempty"`
+	RemoteIP *CaddyRemoteIPMatch `json:"remote_ip,omitempty"`
+	Not      *CaddyMatch       `json:"not,omitempty"` // For inverting matches (e.g., blocking IPs)
+}
+
+type CaddyRemoteIPMatch struct {
+	Ranges []string `json:"ranges,omitempty"`
 }
 
 type CaddyHandler struct {

@@ -4,8 +4,10 @@ import { apiClient, type Proxy } from '@/services/api'
 
 const proxies = ref<Proxy[]>([])
 const showAddModal = ref(false)
+const showEditModal = ref(false)
 const loading = ref(false)
 const error = ref('')
+const editingProxy = ref<Proxy | null>(null)
 
 // Form data
 const formData = ref({
@@ -20,12 +22,37 @@ const formData = ref({
   health_check_enabled: false,
   health_check_interval: '30s',
   health_check_path: '/',
-  health_check_expected_status: 200
+  health_check_expected_status: 200,
+  allowed_ips: [] as string[],
+  blocked_ips: [] as string[]
 })
+
+const resetFormData = () => {
+  formData.value = { 
+    domain: '', 
+    target_url: '', 
+    ssl_mode: 'auto', 
+    challenge_type: 'http', 
+    dns_provider: 'cloudflare', 
+    dns_credentials: {} as Record<string, string>,
+    custom_headers: {} as Record<string, string>,
+    basic_auth: null as { enabled: boolean; username: string; password: string } | null,
+    health_check_enabled: false,
+    health_check_interval: '30s',
+    health_check_path: '/',
+    health_check_expected_status: 200,
+    allowed_ips: [] as string[],
+    blocked_ips: [] as string[]
+  }
+}
 
 const newHeaderKey = ref('')
 const newHeaderValue = ref('')
 const activeTab = ref('basic')
+
+// IP management
+const newAllowedIP = ref('')
+const newBlockedIP = ref('')
 
 const loadProxies = async () => {
   loading.value = true
@@ -58,24 +85,62 @@ const addProxy = async () => {
     error.value = response.error
   } else {
     showAddModal.value = false
-    formData.value = { 
-      domain: '', 
-      target_url: '', 
-      ssl_mode: 'auto', 
-      challenge_type: 'http', 
-      dns_provider: 'cloudflare', 
-      dns_credentials: {} as Record<string, string>,
-      custom_headers: {} as Record<string, string>,
-      basic_auth: null as { enabled: boolean; username: string; password: string } | null,
-      health_check_enabled: false,
-      health_check_interval: '30s',
-      health_check_path: '/',
-      health_check_expected_status: 200
-    }
+    resetFormData()
     await loadProxies()
   }
   
   loading.value = false
+}
+
+const editProxy = (proxy: Proxy) => {
+  editingProxy.value = proxy
+  // Populate form with proxy data
+  formData.value = {
+    domain: proxy.domain || '',
+    target_url: proxy.target_url || '',
+    ssl_mode: proxy.ssl_mode || 'auto',
+    challenge_type: proxy.challenge_type || 'http',
+    dns_provider: proxy.dns_provider || 'cloudflare',
+    dns_credentials: proxy.dns_credentials || {},
+    custom_headers: proxy.custom_headers || {},
+    basic_auth: proxy.basic_auth || null,
+    health_check_enabled: proxy.health_check_enabled || false,
+    health_check_interval: proxy.health_check_interval || '30s',
+    health_check_path: proxy.health_check_path || '/',
+    health_check_expected_status: proxy.health_check_expected_status || 200,
+    allowed_ips: proxy.allowed_ips || [],
+    blocked_ips: proxy.blocked_ips || []
+  }
+  updateDNSCredentials()
+  showEditModal.value = true
+}
+
+const updateProxy = async () => {
+  if (!editingProxy.value || !formData.value.domain || !formData.value.target_url) {
+    error.value = 'Domain and target URL are required'
+    return
+  }
+  
+  loading.value = true
+  error.value = ''
+  
+  const response = await apiClient.updateProxy(editingProxy.value.id, formData.value)
+  if (response.error) {
+    error.value = response.error
+  } else {
+    showEditModal.value = false
+    editingProxy.value = null
+    resetFormData()
+    await loadProxies()
+  }
+  
+  loading.value = false
+}
+
+const cancelEdit = () => {
+  showEditModal.value = false
+  editingProxy.value = null
+  resetFormData()
 }
 
 const deleteProxy = async (proxy: Proxy) => {
@@ -217,6 +282,70 @@ const dnsProviders = [
   }
 ]
 
+// IP validation and management functions
+const validateIPOrCIDR = (ip: string): boolean => {
+  const trimmedIP = ip.trim()
+  if (!trimmedIP) return false
+  
+  // Check if it's a valid IP address
+  const ipRegex = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/
+  if (ipRegex.test(trimmedIP)) {
+    // Validate IP octets are in valid range
+    const octets = trimmedIP.split('.')
+    return octets.every(octet => {
+      const num = parseInt(octet, 10)
+      return num >= 0 && num <= 255
+    })
+  }
+  
+  // Check if it's a valid CIDR
+  const cidrRegex = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}\/[0-9]{1,2}$/
+  if (cidrRegex.test(trimmedIP)) {
+    const [ipPart, prefixPart] = trimmedIP.split('/')
+    const prefix = parseInt(prefixPart, 10)
+    if (prefix < 0 || prefix > 32) return false
+    
+    // Validate IP part
+    const octets = ipPart.split('.')
+    return octets.every(octet => {
+      const num = parseInt(octet, 10)
+      return num >= 0 && num <= 255
+    })
+  }
+  
+  return false
+}
+
+const addAllowedIP = () => {
+  const ip = newAllowedIP.value.trim()
+  if (ip && validateIPOrCIDR(ip) && !formData.value.allowed_ips.includes(ip)) {
+    formData.value.allowed_ips.push(ip)
+    newAllowedIP.value = ''
+  }
+}
+
+const removeAllowedIP = (ip: string) => {
+  const index = formData.value.allowed_ips.indexOf(ip)
+  if (index > -1) {
+    formData.value.allowed_ips.splice(index, 1)
+  }
+}
+
+const addBlockedIP = () => {
+  const ip = newBlockedIP.value.trim()
+  if (ip && validateIPOrCIDR(ip) && !formData.value.blocked_ips.includes(ip)) {
+    formData.value.blocked_ips.push(ip)
+    newBlockedIP.value = ''
+  }
+}
+
+const removeBlockedIP = (ip: string) => {
+  const index = formData.value.blocked_ips.indexOf(ip)
+  if (index > -1) {
+    formData.value.blocked_ips.splice(index, 1)
+  }
+}
+
 onMounted(() => {
   loadProxies()
   updateDNSCredentials()
@@ -299,6 +428,16 @@ onMounted(() => {
               </div>
             </div>
             <div class="card-actions">
+              <button 
+                class="btn btn-primary btn-sm" 
+                @click="editProxy(proxy)" 
+                :disabled="loading || !proxy.id || proxy.id.trim() === ''"
+                :title="!proxy.id || proxy.id.trim() === '' ? 'Cannot edit: Missing proxy ID' : 'Edit proxy'">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                Edit
+              </button>
               <button 
                 class="btn btn-error btn-sm" 
                 @click="deleteProxy(proxy)" 
@@ -587,6 +726,110 @@ onMounted(() => {
               </div>
             </div>
 
+            <!-- Access Control Section -->
+            <div>
+              <h4 class="font-semibold text-base-content mb-2">Access Control</h4>
+              <p class="text-sm text-base-content/70 mb-6">Control which IP addresses can access this proxy</p>
+              
+              <!-- Allowed IPs (Whitelist) -->
+              <div class="mb-6">
+                <h5 class="font-medium text-base-content mb-4">Allowed IPs (Whitelist)</h5>
+                <p class="text-xs text-base-content/60 mb-3">Only allow requests from these IPs/CIDR ranges. Leave empty to allow all IPs.</p>
+                
+                <!-- Existing Allowed IPs -->
+                <div v-if="formData.allowed_ips.length > 0" class="space-y-2 mb-4">
+                  <div v-for="ip in formData.allowed_ips" :key="'allowed-' + ip" class="flex items-center gap-2 p-2 bg-green-50 border border-green-200 rounded-lg">
+                    <span class="font-mono text-sm text-green-800 flex-1">{{ ip }}</span>
+                    <button 
+                      type="button"
+                      class="btn btn-xs btn-error btn-outline"
+                      @click="removeAllowedIP(ip)"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+                
+                <!-- Add New Allowed IP -->
+                <div class="flex gap-2">
+                  <input 
+                    v-model="newAllowedIP"
+                    type="text" 
+                    placeholder="192.168.1.0/24 or 10.0.0.1" 
+                    class="input input-bordered flex-1"
+                    :class="{ 'input-error': newAllowedIP.trim() && !validateIPOrCIDR(newAllowedIP) }"
+                    @keyup.enter="addAllowedIP"
+                  />
+                  <button 
+                    type="button"
+                    class="btn btn-primary"
+                    @click="addAllowedIP"
+                    :disabled="!newAllowedIP.trim() || !validateIPOrCIDR(newAllowedIP)"
+                  >
+                    Add
+                  </button>
+                </div>
+                <div v-if="newAllowedIP.trim() && !validateIPOrCIDR(newAllowedIP)" class="text-xs text-error mt-1">
+                  Invalid IP address or CIDR range
+                </div>
+              </div>
+
+              <!-- Blocked IPs (Blacklist) -->
+              <div>
+                <h5 class="font-medium text-base-content mb-4">Blocked IPs (Blacklist)</h5>
+                <p class="text-xs text-base-content/60 mb-3">Block requests from these IPs/CIDR ranges. Only used when whitelist is empty.</p>
+                
+                <!-- Existing Blocked IPs -->
+                <div v-if="formData.blocked_ips.length > 0" class="space-y-2 mb-4">
+                  <div v-for="ip in formData.blocked_ips" :key="'blocked-' + ip" class="flex items-center gap-2 p-2 bg-red-50 border border-red-200 rounded-lg">
+                    <span class="font-mono text-sm text-red-800 flex-1">{{ ip }}</span>
+                    <button 
+                      type="button"
+                      class="btn btn-xs btn-error btn-outline"
+                      @click="removeBlockedIP(ip)"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+                
+                <!-- Add New Blocked IP -->
+                <div class="flex gap-2">
+                  <input 
+                    v-model="newBlockedIP"
+                    type="text" 
+                    placeholder="203.0.113.0/24 or 198.51.100.1" 
+                    class="input input-bordered flex-1"
+                    :class="{ 'input-error': newBlockedIP.trim() && !validateIPOrCIDR(newBlockedIP) }"
+                    @keyup.enter="addBlockedIP"
+                  />
+                  <button 
+                    type="button"
+                    class="btn btn-primary"
+                    @click="addBlockedIP"
+                    :disabled="!newBlockedIP.trim() || !validateIPOrCIDR(newBlockedIP)"
+                  >
+                    Add
+                  </button>
+                </div>
+                <div v-if="newBlockedIP.trim() && !validateIPOrCIDR(newBlockedIP)" class="text-xs text-error mt-1">
+                  Invalid IP address or CIDR range
+                </div>
+              </div>
+
+              <!-- Info Alert -->
+              <div class="alert alert-info mt-4">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <div class="text-xs">
+                  <p><strong>Note:</strong> If you specify allowed IPs, only those IPs will be able to access the proxy.</p>
+                  <p>Blocked IPs are only applied when the allowed list is empty.</p>
+                  <p>Supports both individual IPs (192.168.1.1) and CIDR ranges (192.168.1.0/24).</p>
+                </div>
+              </div>
+            </div>
+
             <!-- Custom Headers Section -->
             <div>
               <h4 class="font-semibold text-base-content mb-2">Custom Headers</h4>
@@ -659,6 +902,459 @@ onMounted(() => {
           <button class="btn btn-primary" @click="addProxy" :disabled="loading">
             <span v-if="loading" class="loading loading-spinner loading-sm"></span>
             Add Proxy
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit Proxy Modal -->
+    <div v-if="showEditModal" class="modal modal-open">
+      <div class="modal-box">
+        <h3 class="font-bold text-lg text-base-content">Edit Proxy</h3>
+        <form @submit.prevent="updateProxy" class="py-6">
+          <!-- Tabs -->
+          <div class="tabs tabs-bordered mb-6 bg-base-200 p-1 rounded-lg">
+            <button 
+              type="button"
+              class="tab tab-lg flex-1 font-medium"
+              :class="{ 'tab-active bg-base-100 text-primary': activeTab === 'basic' }"
+              @click="activeTab = 'basic'"
+            >
+              Basic Settings
+            </button>
+            <button 
+              type="button"
+              class="tab tab-lg flex-1 font-medium"
+              :class="{ 'tab-active bg-base-100 text-primary': activeTab === 'ssl' }"
+              @click="activeTab = 'ssl'"
+            >
+              SSL & ACME
+            </button>
+            <button 
+              type="button"
+              class="tab tab-lg flex-1 font-medium"
+              :class="{ 'tab-active bg-base-100 text-primary': activeTab === 'advanced' }"
+              @click="activeTab = 'advanced'"
+            >
+              Advanced
+            </button>
+          </div>
+
+          <!-- Basic Settings Tab -->
+          <div v-show="activeTab === 'basic'" class="space-y-6">
+            <div class="form-control">
+              <label class="label pb-2">
+                <span class="label-text font-medium">Domain/Subdomain</span>
+              </label>
+              <input 
+                v-model="formData.domain"
+                type="text" 
+                placeholder="example.com" 
+                class="input input-bordered w-full" 
+                required
+              />
+              <div class="label">
+                <span class="label-text-alt">The domain that will proxy to your target</span>
+              </div>
+            </div>
+            
+            <div class="form-control">
+              <label class="label pb-2">
+                <span class="label-text font-medium">Target URL</span>
+              </label>
+              <input 
+                v-model="formData.target_url"
+                type="text" 
+                placeholder="http://localhost:3000" 
+                class="input input-bordered w-full" 
+                required
+              />
+              <div class="label">
+                <span class="label-text-alt">The destination where requests will be forwarded</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- SSL & ACME Tab -->
+          <div v-show="activeTab === 'ssl'" class="space-y-6">
+            <div class="form-control">
+              <label class="label pb-2">
+                <span class="label-text font-medium">SSL Certificate</span>
+              </label>
+              <select v-model="formData.ssl_mode" class="select select-bordered w-full">
+                <option value="auto">Auto (ACME)</option>
+                <option value="custom">Custom Certificate</option>
+                <option value="none">None (HTTP only)</option>
+              </select>
+              <div class="label">
+                <span class="label-text-alt">Choose how SSL certificates are handled</span>
+              </div>
+            </div>
+
+            <!-- ACME Challenge Configuration (only shown when SSL is auto) -->
+            <div v-if="formData.ssl_mode === 'auto'" class="space-y-6">
+              <div class="form-control">
+                <label class="label pb-2">
+                  <span class="label-text font-medium">Challenge Type</span>
+                </label>
+                <select v-model="formData.challenge_type" class="select select-bordered w-full">
+                  <option value="http">HTTP-01 Challenge</option>
+                  <option value="dns">DNS-01 Challenge</option>
+                </select>
+                <div class="label pt-2">
+                  <span class="label-text-alt">
+                    {{ formData.challenge_type === 'http' 
+                        ? 'Uses HTTP validation (port 80 must be accessible)' 
+                        : 'Uses DNS validation (works behind firewalls)' }}
+                  </span>
+                </div>
+              </div>
+
+              <!-- DNS Challenge Configuration -->
+              <div v-if="formData.challenge_type === 'dns'" class="space-y-6">
+                <div class="form-control">
+                  <label class="label pb-2">
+                    <span class="label-text font-medium">DNS Provider</span>
+                  </label>
+                  <select 
+                    v-model="formData.dns_provider" 
+                    @change="updateDNSCredentials()"
+                    class="select select-bordered w-full"
+                  >
+                    <option v-for="provider in dnsProviders" :key="provider.value" :value="provider.value">
+                      {{ provider.label }}
+                    </option>
+                  </select>
+                </div>
+
+                <!-- DNS Provider Credentials -->
+                <div>
+                  <h5 class="font-medium text-base-content mb-4">DNS Provider Credentials</h5>
+                  <div class="space-y-4">
+                    <div v-for="field in dnsProviders.find(p => p.value === formData.dns_provider)?.fields" :key="field.key" class="form-control">
+                      <label class="label pb-2">
+                        <span class="label-text font-medium">{{ field.label }}</span>
+                      </label>
+                      <input 
+                        v-model="formData.dns_credentials[field.key]"
+                        :type="field.type"
+                        class="input input-bordered w-full"
+                        :required="field.required && formData.challenge_type === 'dns'"
+                        :placeholder="field.type === 'password' ? '••••••••••••••••' : ''"
+                      />
+                    </div>
+                  </div>
+                  
+                  <!-- Help text for Cloudflare -->
+                  <div v-if="formData.dns_provider === 'cloudflare'" class="alert alert-info mt-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <div class="text-xs">
+                      <p><strong>API Token:</strong> Create a token with Zone:DNS:Edit permissions</p>
+                      <p><strong>Email:</strong> Only needed for legacy API key authentication</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Advanced Tab -->
+          <div v-show="activeTab === 'advanced'" class="space-y-6">
+            <!-- Health Check Section -->
+            <div>
+              <h4 class="font-semibold text-base-content mb-2">Health Checks</h4>
+              <p class="text-sm text-base-content/70 mb-4">Monitor the health status of your upstream service</p>
+              
+              <div class="form-control">
+                <label class="label cursor-pointer justify-start gap-3">
+                  <input 
+                    type="checkbox" 
+                    class="checkbox checkbox-primary" 
+                    v-model="formData.health_check_enabled"
+                  />
+                  <span class="label-text font-medium">Enable Health Checks</span>
+                </label>
+              </div>
+
+              <div v-if="formData.health_check_enabled" class="mt-4 space-y-4 p-4 bg-base-200 rounded-lg">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div class="form-control">
+                    <label class="label pb-2">
+                      <span class="label-text font-medium">Check Interval</span>
+                    </label>
+                    <select v-model="formData.health_check_interval" class="select select-bordered w-full">
+                      <option value="10s">10 seconds</option>
+                      <option value="30s">30 seconds</option>
+                      <option value="1m">1 minute</option>
+                      <option value="2m">2 minutes</option>
+                      <option value="5m">5 minutes</option>
+                    </select>
+                  </div>
+
+                  <div class="form-control">
+                    <label class="label pb-2">
+                      <span class="label-text font-medium">Expected Status Code</span>
+                    </label>
+                    <input 
+                      v-model.number="formData.health_check_expected_status"
+                      type="number" 
+                      class="input input-bordered w-full"
+                      min="100"
+                      max="599"
+                    />
+                  </div>
+                </div>
+
+                <div class="form-control">
+                  <label class="label pb-2">
+                    <span class="label-text font-medium">Health Check Path</span>
+                  </label>
+                  <input 
+                    v-model="formData.health_check_path"
+                    type="text" 
+                    placeholder="/health" 
+                    class="input input-bordered w-full"
+                  />
+                  <div class="label">
+                    <span class="label-text-alt">Path to check on your upstream service (e.g., /health, /status, /)</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Basic Authentication Section -->
+            <div>
+              <h4 class="font-semibold text-base-content mb-2">Basic Authentication</h4>
+              <p class="text-sm text-base-content/70 mb-4">Protect this proxy with HTTP Basic Authentication</p>
+              
+              <div class="form-control">
+                <label class="label cursor-pointer justify-start gap-3">
+                  <input 
+                    type="checkbox" 
+                    class="checkbox checkbox-primary" 
+                    :checked="formData.basic_auth?.enabled || false"
+                    @change="(e) => {
+                      if ((e.target as HTMLInputElement).checked) {
+                        formData.basic_auth = { enabled: true, username: '', password: '' }
+                      } else {
+                        formData.basic_auth = null
+                      }
+                    }"
+                  />
+                  <span class="label-text font-medium">Enable Basic Authentication</span>
+                </label>
+              </div>
+
+              <div v-if="formData.basic_auth?.enabled" class="mt-4 space-y-4 p-4 bg-base-200 rounded-lg">
+                <div class="form-control">
+                  <label class="label pb-2">
+                    <span class="label-text font-medium">Username</span>
+                  </label>
+                  <input 
+                    v-model="formData.basic_auth.username"
+                    type="text" 
+                    placeholder="Enter username" 
+                    class="input input-bordered w-full"
+                    required
+                  />
+                </div>
+                
+                <div class="form-control">
+                  <label class="label pb-2">
+                    <span class="label-text font-medium">Password</span>
+                  </label>
+                  <input 
+                    v-model="formData.basic_auth.password"
+                    type="password" 
+                    placeholder="Enter password" 
+                    class="input input-bordered w-full"
+                    required
+                  />
+                  <div class="label">
+                    <span class="label-text-alt">Password will be securely hashed by Caddy</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Access Control Section -->
+            <div>
+              <h4 class="font-semibold text-base-content mb-2">Access Control</h4>
+              <p class="text-sm text-base-content/70 mb-6">Control which IP addresses can access this proxy</p>
+              
+              <!-- Allowed IPs (Whitelist) -->
+              <div class="mb-6">
+                <h5 class="font-medium text-base-content mb-4">Allowed IPs (Whitelist)</h5>
+                <p class="text-xs text-base-content/60 mb-3">Only allow requests from these IPs/CIDR ranges. Leave empty to allow all IPs.</p>
+                
+                <!-- Existing Allowed IPs -->
+                <div v-if="formData.allowed_ips.length > 0" class="space-y-2 mb-4">
+                  <div v-for="ip in formData.allowed_ips" :key="'allowed-' + ip" class="flex items-center gap-2 p-2 bg-green-50 border border-green-200 rounded-lg">
+                    <span class="font-mono text-sm text-green-800 flex-1">{{ ip }}</span>
+                    <button 
+                      type="button"
+                      class="btn btn-xs btn-error btn-outline"
+                      @click="removeAllowedIP(ip)"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+                
+                <!-- Add New Allowed IP -->
+                <div class="flex gap-2">
+                  <input 
+                    v-model="newAllowedIP"
+                    type="text" 
+                    placeholder="192.168.1.0/24 or 10.0.0.1" 
+                    class="input input-bordered flex-1"
+                    :class="{ 'input-error': newAllowedIP.trim() && !validateIPOrCIDR(newAllowedIP) }"
+                    @keyup.enter="addAllowedIP"
+                  />
+                  <button 
+                    type="button"
+                    class="btn btn-primary"
+                    @click="addAllowedIP"
+                    :disabled="!newAllowedIP.trim() || !validateIPOrCIDR(newAllowedIP)"
+                  >
+                    Add
+                  </button>
+                </div>
+                <div v-if="newAllowedIP.trim() && !validateIPOrCIDR(newAllowedIP)" class="text-xs text-error mt-1">
+                  Invalid IP address or CIDR range
+                </div>
+              </div>
+
+              <!-- Blocked IPs (Blacklist) -->
+              <div>
+                <h5 class="font-medium text-base-content mb-4">Blocked IPs (Blacklist)</h5>
+                <p class="text-xs text-base-content/60 mb-3">Block requests from these IPs/CIDR ranges. Only used when whitelist is empty.</p>
+                
+                <!-- Existing Blocked IPs -->
+                <div v-if="formData.blocked_ips.length > 0" class="space-y-2 mb-4">
+                  <div v-for="ip in formData.blocked_ips" :key="'blocked-' + ip" class="flex items-center gap-2 p-2 bg-red-50 border border-red-200 rounded-lg">
+                    <span class="font-mono text-sm text-red-800 flex-1">{{ ip }}</span>
+                    <button 
+                      type="button"
+                      class="btn btn-xs btn-error btn-outline"
+                      @click="removeBlockedIP(ip)"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+                
+                <!-- Add New Blocked IP -->
+                <div class="flex gap-2">
+                  <input 
+                    v-model="newBlockedIP"
+                    type="text" 
+                    placeholder="203.0.113.0/24 or 198.51.100.1" 
+                    class="input input-bordered flex-1"
+                    :class="{ 'input-error': newBlockedIP.trim() && !validateIPOrCIDR(newBlockedIP) }"
+                    @keyup.enter="addBlockedIP"
+                  />
+                  <button 
+                    type="button"
+                    class="btn btn-primary"
+                    @click="addBlockedIP"
+                    :disabled="!newBlockedIP.trim() || !validateIPOrCIDR(newBlockedIP)"
+                  >
+                    Add
+                  </button>
+                </div>
+                <div v-if="newBlockedIP.trim() && !validateIPOrCIDR(newBlockedIP)" class="text-xs text-error mt-1">
+                  Invalid IP address or CIDR range
+                </div>
+              </div>
+
+              <!-- Info Alert -->
+              <div class="alert alert-info mt-4">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <div class="text-xs">
+                  <p><strong>Note:</strong> If you specify allowed IPs, only those IPs will be able to access the proxy.</p>
+                  <p>Blocked IPs are only applied when the allowed list is empty.</p>
+                  <p>Supports both individual IPs (192.168.1.1) and CIDR ranges (192.168.1.0/24).</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Custom Headers Section -->
+            <div>
+              <h4 class="font-semibold text-base-content mb-2">Custom Headers</h4>
+              <p class="text-sm text-base-content/70 mb-6">These headers will be added to requests sent to the target</p>
+              
+              <!-- Existing Headers -->
+              <div v-if="Object.keys(formData.custom_headers).length > 0" class="space-y-3 mb-6">
+                <div v-for="(_, key) in formData.custom_headers" :key="key" class="flex items-start gap-3 p-3 bg-base-200 rounded-lg border">
+                  <div class="flex-1 grid grid-cols-2 gap-3">
+                    <div>
+                      <label class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Header Name</label>
+                      <div class="text-sm font-mono bg-base-100 px-2 py-1 rounded">{{ key }}</div>
+                    </div>
+                    <div>
+                      <label class="text-xs font-medium text-base-content/60 uppercase tracking-wide">Header Value</label>
+                      <input 
+                        v-model="formData.custom_headers[key]"
+                        type="text" 
+                        class="input input-bordered input-sm w-full"
+                        placeholder="Header value"
+                      />
+                    </div>
+                  </div>
+                  <div class="flex flex-col justify-end h-full pt-5">
+                    <button 
+                      type="button"
+                      class="btn btn-sm btn-error btn-outline"
+                      @click="removeCustomHeader(key)"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Add New Header -->
+              <div class="border-t pt-4">
+                <label class="text-sm font-medium text-base-content mb-3 block">Add New Header</label>
+                <div class="flex gap-3">
+                  <input 
+                    v-model="newHeaderKey"
+                    type="text" 
+                    placeholder="Header name (e.g., X-Real-IP)" 
+                    class="input input-bordered flex-1"
+                    @keyup.enter="addCustomHeader"
+                  />
+                  <input 
+                    v-model="newHeaderValue"
+                    type="text" 
+                    placeholder="Header value (e.g., {remote_host})" 
+                    class="input input-bordered flex-1"
+                    @keyup.enter="addCustomHeader"
+                  />
+                  <button 
+                    type="button"
+                    class="btn btn-primary"
+                    @click="addCustomHeader"
+                    :disabled="!newHeaderKey.trim() || !newHeaderValue.trim()"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </form>
+        
+        <div class="modal-action pt-6">
+          <button class="btn" @click="cancelEdit" :disabled="loading">Cancel</button>
+          <button class="btn btn-primary" @click="updateProxy" :disabled="loading">
+            <span v-if="loading" class="loading loading-spinner loading-sm"></span>
+            Update Proxy
           </button>
         </div>
       </div>

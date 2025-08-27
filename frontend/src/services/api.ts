@@ -12,6 +12,8 @@ export interface Proxy {
   health_check_interval?: string
   health_check_path?: string
   health_check_expected_status?: number
+  allowed_ips?: string[]
+  blocked_ips?: string[]
   status?: string
   created_at: string
   updated_at: string
@@ -109,6 +111,8 @@ class ApiClient {
     health_check_interval?: string
     health_check_path?: string
     health_check_expected_status?: number
+    allowed_ips?: string[]
+    blocked_ips?: string[]
   }): Promise<ApiResponse<Proxy>> {
     return this.request('/api/proxies', {
       method: 'POST',
@@ -131,6 +135,8 @@ class ApiClient {
       health_check_interval?: string
       health_check_path?: string
       health_check_expected_status?: number
+      allowed_ips?: string[]
+      blocked_ips?: string[]
     }
   ): Promise<ApiResponse<Proxy>> {
     return this.request(`/api/proxies/${id}`, {

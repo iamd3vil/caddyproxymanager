@@ -87,6 +87,8 @@ func (h *Handler) CreateProxy(w http.ResponseWriter, r *http.Request) {
 		HealthCheckInterval       string            `json:"health_check_interval"`
 		HealthCheckPath           string            `json:"health_check_path"`
 		HealthCheckExpectedStatus int               `json:"health_check_expected_status"`
+		AllowedIPs                []string          `json:"allowed_ips"`
+		BlockedIPs                []string          `json:"blocked_ips"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&proxyReq); err != nil {
@@ -139,6 +141,8 @@ func (h *Handler) CreateProxy(w http.ResponseWriter, r *http.Request) {
 	if proxyReq.HealthCheckExpectedStatus != 0 {
 		proxy.HealthCheckExpectedStatus = proxyReq.HealthCheckExpectedStatus
 	}
+	proxy.AllowedIPs = proxyReq.AllowedIPs
+	proxy.BlockedIPs = proxyReq.BlockedIPs
 
 	// Add proxy to Caddy configuration
 	if err := h.CaddyClient.AddProxy(*proxy); err != nil {
@@ -182,6 +186,8 @@ func (h *Handler) UpdateProxy(w http.ResponseWriter, r *http.Request) {
 		HealthCheckInterval       string            `json:"health_check_interval"`
 		HealthCheckPath           string            `json:"health_check_path"`
 		HealthCheckExpectedStatus int               `json:"health_check_expected_status"`
+		AllowedIPs                []string          `json:"allowed_ips"`
+		BlockedIPs                []string          `json:"blocked_ips"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&proxyReq); err != nil {
@@ -235,6 +241,8 @@ func (h *Handler) UpdateProxy(w http.ResponseWriter, r *http.Request) {
 	if proxyReq.HealthCheckExpectedStatus != 0 {
 		proxy.HealthCheckExpectedStatus = proxyReq.HealthCheckExpectedStatus
 	}
+	proxy.AllowedIPs = proxyReq.AllowedIPs
+	proxy.BlockedIPs = proxyReq.BlockedIPs
 	proxy.UpdateTimestamp()
 
 	// Update proxy in Caddy configuration

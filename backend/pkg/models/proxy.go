@@ -37,6 +37,8 @@ type Proxy struct {
 	HealthCheckInterval       string            `json:"health_check_interval"`        // e.g., "30s"
 	HealthCheckPath           string            `json:"health_check_path"`            // e.g., "/health"
 	HealthCheckExpectedStatus int               `json:"health_check_expected_status"` // e.g., 200
+	AllowedIPs                []string          `json:"allowed_ips"`                  // IP whitelist
+	BlockedIPs                []string          `json:"blocked_ips"`                  // IP blacklist
 	CreatedAt                 string            `json:"created_at"`
 	UpdatedAt                 string            `json:"updated_at"`
 }
@@ -55,10 +57,12 @@ func NewProxy(domain, targetURL, sslMode string) *Proxy {
 		CustomHeaders:             make(map[string]string),
 		BasicAuth:                 nil, // disabled by default
 		Status:                    "active",
-		HealthCheckEnabled:        false, // disabled by default
-		HealthCheckInterval:       "30s", // default interval
-		HealthCheckPath:           "/",   // default path
-		HealthCheckExpectedStatus: 200,   // default expected status
+		HealthCheckEnabled:        false,        // disabled by default
+		HealthCheckInterval:       "30s",       // default interval
+		HealthCheckPath:           "/",         // default path
+		HealthCheckExpectedStatus: 200,         // default expected status
+		AllowedIPs:                []string{},  // empty whitelist by default
+		BlockedIPs:                []string{},  // empty blacklist by default
 		CreatedAt:                 now,
 		UpdatedAt:                 now,
 	}
