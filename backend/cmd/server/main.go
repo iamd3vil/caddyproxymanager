@@ -1,3 +1,5 @@
+// Package main implements the main entry point for the Caddy Proxy Manager backend server.
+// It provides a REST API for managing Caddy reverse proxy configurations with authentication.
 package main
 
 import (
@@ -20,25 +22,26 @@ import (
 )
 
 const (
-	magicNumber60            = 60
-	magicNumber20            = 20
-	readHeaderTimeoutSeconds = 30
-	shutdownTimeoutSeconds   = 30
+	timeout60s               = 60 // Default timeout for HTTP operations in seconds
+	readHeaderTimeoutSeconds = 30 // Maximum time to read request headers
+	shutdownTimeoutSeconds   = 30 // Maximum time to wait for graceful shutdown
 	defaultPort              = "8080"
 	defaultCaddyAdminURL     = "http://localhost:2019"
 	defaultDataDir           = "./data"
 	defaultStaticDir         = "./static/"
-	sessionCleanupInterval   = 1 * time.Hour
+	sessionCleanupInterval   = 1 * time.Hour // Interval for cleaning expired sessions
 )
 
+// serverConfig holds all configuration parameters for the proxy manager server
 type serverConfig struct {
-	port          string
-	caddyAdminURL string
-	dataDir       string
-	configFile    string
-	staticDir     string
+	port          string // Port for the HTTP server to listen on
+	caddyAdminURL string // URL for the Caddy Admin API
+	dataDir       string // Directory for storing persistent data
+	configFile    string // Path to the Caddy configuration file
+	staticDir     string // Directory for static assets
 }
 
+// getServerConfig retrieves server configuration from environment variables with fallback defaults
 func getServerConfig() *serverConfig {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -69,6 +72,7 @@ func getServerConfig() *serverConfig {
 	}
 }
 
+// initializeCaddy creates and configures a Caddy client, attempting to restore previous configuration
 func initializeCaddy(cfg *serverConfig) *caddy.Client {
 	caddyClient := caddy.New(cfg.caddyAdminURL, cfg.configFile)
 
@@ -82,6 +86,7 @@ func initializeCaddy(cfg *serverConfig) *caddy.Client {
 	return caddyClient
 }
 
+// startHealthChecks initializes health monitoring for all configured proxies that have it enabled
 func startHealthChecks(caddyClient *caddy.Client, healthService *health.Service) {
 	config, err := caddyClient.GetConfig()
 	if err != nil {
@@ -100,6 +105,7 @@ func startHealthChecks(caddyClient *caddy.Client, healthService *health.Service)
 	log.Printf("Started health checks for %d proxies\n", len(proxies))
 }
 
+// startSessionCleanup runs a background goroutine that periodically removes expired authentication sessions
 func startSessionCleanup(ctx context.Context, authStorage *auth.Storage, waitGroup *sync.WaitGroup) {
 	waitGroup.Add(1)
 
@@ -126,6 +132,7 @@ func startSessionCleanup(ctx context.Context, authStorage *auth.Storage, waitGro
 	go tickerFunc()
 }
 
+// setupRoutes registers all HTTP routes for the API, separating public auth routes from protected routes
 func setupRoutes(
 	mux *http.ServeMux,
 	handler *handlers.Handler,
@@ -151,6 +158,7 @@ func setupRoutes(
 	mux.HandleFunc("POST /api/reload", corsHandler(authMiddleware.RequireAuth(handler.Reload)))
 }
 
+// setupStaticHandler configures serving of static files with SPA fallback support
 func setupStaticHandler(mux *http.ServeMux, staticDir string, corsHandler func(http.HandlerFunc) http.HandlerFunc) {
 	fileServer := http.FileServer(http.Dir(staticDir))
 
@@ -171,27 +179,21 @@ func setupStaticHandler(mux *http.ServeMux, staticDir string, corsHandler func(h
 	}))
 }
 
+// createServer configures and returns an HTTP server with appropriate timeouts and limits
 func createServer(port string, handler http.Handler) *http.Server {
 	return &http.Server{
 		Addr:                         ":" + port,
 		Handler:                      handler,
 		ReadHeaderTimeout:            readHeaderTimeoutSeconds * time.Second,
-		ReadTimeout:                  magicNumber60 * time.Second,
-		WriteTimeout:                 magicNumber60 * time.Second,
-		IdleTimeout:                  magicNumber60 * time.Second,
-		MaxHeaderBytes:               1 << magicNumber20,
+		ReadTimeout:                  timeout60s * time.Second,
+		WriteTimeout:                 timeout60s * time.Second,
+		IdleTimeout:                  timeout60s * time.Second,
+		MaxHeaderBytes:               1 << 20,
 		DisableGeneralOptionsHandler: false,
-		TLSConfig:                    nil,
-		TLSNextProto:                 nil,
-		ConnState:                    nil,
-		ErrorLog:                     nil,
-		BaseContext:                  nil,
-		ConnContext:                  nil,
-		HTTP2:                        nil,
-		Protocols:                    nil,
 	}
 }
 
+// startServer launches the HTTP server in a goroutine with configuration logging
 func startServer(server *http.Server, cfg *serverConfig, waitGroup *sync.WaitGroup) {
 	waitGroup.Add(1)
 
@@ -216,6 +218,7 @@ func startServer(server *http.Server, cfg *serverConfig, waitGroup *sync.WaitGro
 	go serverFunc()
 }
 
+// initializeAuthStorage creates and initializes the authentication storage system
 func initializeAuthStorage(dataDir string) *auth.Storage {
 	authStorage := auth.NewStorage(dataDir)
 	if err := authStorage.Initialize(); err != nil {
@@ -225,6 +228,7 @@ func initializeAuthStorage(dataDir string) *auth.Storage {
 	return authStorage
 }
 
+// gracefulShutdown handles server shutdown by stopping HTTP server and waiting for all goroutines to complete
 func gracefulShutdown(server *http.Server, waitGroup *sync.WaitGroup, cancel context.CancelFunc) {
 	log.Println("\nShutdown signal received, initiating graceful shutdown...")
 	cancel()
@@ -243,35 +247,43 @@ func gracefulShutdown(server *http.Server, waitGroup *sync.WaitGroup, cancel con
 	log.Println("All goroutines finished, graceful shutdown completed")
 }
 
+// main is the entry point that initializes and orchestrates all server components
 func main() {
 	var waitGroup sync.WaitGroup
 
+	// Set up signal handling for graceful shutdown
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	// Load configuration and initialize core services
 	cfg := getServerConfig()
 	caddyClient := initializeCaddy(cfg)
 
+	// Initialize health monitoring system
 	healthService := health.NewService()
 	startHealthChecks(caddyClient, healthService)
 
+	// Set up authentication system
 	authStorage := initializeAuthStorage(cfg.dataDir)
-
 	startSessionCleanup(ctx, authStorage, &waitGroup)
 
+	// Create HTTP handlers and middleware
 	handler := handlers.New(caddyClient, healthService)
 	authHandler := handlers.NewAuthHandler(authStorage)
 	authMiddleware := auth.NewMiddleware(authStorage)
 
+	// Configure HTTP routing
 	mux := http.NewServeMux()
 	corsHandler := authMiddleware.CORS
 
 	setupRoutes(mux, handler, authHandler, corsHandler, authMiddleware)
 	setupStaticHandler(mux, cfg.staticDir, corsHandler)
 
+	// Start the HTTP server
 	server := createServer(cfg.port, mux)
 	startServer(server, cfg, &waitGroup)
 
+	// Wait for shutdown signal
 	<-ctx.Done()
 	gracefulShutdown(server, &waitGroup, cancel)
 }
