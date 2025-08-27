@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/sarat/caddyproxymanager/pkg/audit"
 	"github.com/sarat/caddyproxymanager/pkg/auth"
 	"github.com/sarat/caddyproxymanager/pkg/models"
 )
@@ -16,11 +17,15 @@ const (
 )
 
 type AuthHandler struct {
-	storage *auth.Storage
+	storage      *auth.Storage
+	auditService *audit.Service
 }
 
-func NewAuthHandler(storage *auth.Storage) *AuthHandler {
-	return &AuthHandler{storage: storage}
+func NewAuthHandler(storage *auth.Storage, auditService *audit.Service) *AuthHandler {
+	return &AuthHandler{
+		storage:      storage,
+		auditService: auditService,
+	}
 }
 
 func (h *AuthHandler) Status(w http.ResponseWriter, r *http.Request) {
@@ -82,6 +87,15 @@ func (h *AuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Log setup action
+	if h.auditService != nil {
+		ipAddress := r.RemoteAddr
+		if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
+			ipAddress = ip
+		}
+		h.auditService.Log("SETUP_SUCCESS", "System setup completed", user.ID, req.Username, ipAddress)
+	}
+
 	if err := json.NewEncoder(w).Encode(models.AuthResponse{
 		Success: true,
 		Message: "Setup completed successfully",
@@ -138,6 +152,15 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Log login action
+	if h.auditService != nil {
+		ipAddress := r.RemoteAddr
+		if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
+			ipAddress = ip
+		}
+		h.auditService.Log("LOGIN_SUCCESS", "User logged in", user.ID, req.Username, ipAddress)
+	}
+
 	if err := json.NewEncoder(w).Encode(models.AuthResponse{
 		Success: true,
 		Message: "Login successful",
@@ -183,6 +206,23 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	// Delete session
 	if err := h.storage.DeleteSession(token); err != nil {
 		// Don't return error if session doesn't exist
+	}
+
+	// Log logout action
+	if h.auditService != nil {
+		ipAddress := r.RemoteAddr
+		if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
+			ipAddress = ip
+		}
+		// Try to get user info from context
+		user := auth.GetUserFromContext(r.Context())
+		username := "unknown"
+		userID := "unknown"
+		if user != nil {
+			username = user.Username
+			userID = user.ID
+		}
+		h.auditService.Log("LOGOUT_SUCCESS", "User logged out", userID, username, ipAddress)
 	}
 
 	if err := json.NewEncoder(w).Encode(models.AuthResponse{

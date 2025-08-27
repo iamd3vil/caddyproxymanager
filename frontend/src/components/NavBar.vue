@@ -108,6 +108,7 @@ const handleLogout = async () => {
         >
           <li><RouterLink to="/">Dashboard</RouterLink></li>
           <li><RouterLink to="/proxies">Proxies</RouterLink></li>
+          <li><RouterLink to="/audit-log">Audit Log</RouterLink></li>
         </ul>
       </div>
       <RouterLink to="/" class="btn btn-ghost text-xl">Caddy Proxy Manager</RouterLink>
@@ -116,6 +117,7 @@ const handleLogout = async () => {
       <ul class="menu menu-horizontal px-1">
         <li><RouterLink to="/" class="btn btn-ghost">Dashboard</RouterLink></li>
         <li><RouterLink to="/proxies" class="btn btn-ghost">Proxies</RouterLink></li>
+        <li><RouterLink to="/audit-log" class="btn btn-ghost">Audit Log</RouterLink></li>
       </ul>
     </div>
     <div class="navbar-end gap-2">

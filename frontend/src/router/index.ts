@@ -33,6 +33,12 @@ const router = createRouter({
       component: () => import('../views/ProxiesView.vue'),
       meta: { requiresAuth: true }
     },
+    {
+      path: '/audit-log',
+      name: 'audit-log',
+      component: () => import('../views/AuditLogView.vue'),
+      meta: { requiresAuth: true }
+    },
   ],
 })
 
@@ -41,7 +47,7 @@ router.beforeEach(async (to, from, next) => {
   try {
     // Check auth status
     const status = await authService.getStatus()
-    
+
     // If auth is disabled, allow all routes
     if (!status.auth_enabled) {
       next()
@@ -60,7 +66,7 @@ router.beforeEach(async (to, from, next) => {
 
     // Check if user is authenticated
     const isAuthenticated = authService.isAuthenticated()
-    
+
     // If user needs to be authenticated but isn't
     if (to.meta.requiresAuth && !isAuthenticated) {
       // Try to verify the token

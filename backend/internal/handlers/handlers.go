@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sarat/caddyproxymanager/pkg/audit"
+	"github.com/sarat/caddyproxymanager/pkg/auth"
 	"github.com/sarat/caddyproxymanager/pkg/caddy"
 	"github.com/sarat/caddyproxymanager/pkg/health"
 	"github.com/sarat/caddyproxymanager/pkg/models"
@@ -21,12 +23,14 @@ const (
 type Handler struct {
 	CaddyClient   *caddy.Client
 	HealthService *health.Service
+	AuditService  *audit.Service
 }
 
-func New(caddyClient *caddy.Client, healthService *health.Service) *Handler {
+func New(caddyClient *caddy.Client, healthService *health.Service, auditService *audit.Service) *Handler {
 	return &Handler{
 		CaddyClient:   caddyClient,
 		HealthService: healthService,
+		AuditService:  auditService,
 	}
 }
 
@@ -158,6 +162,22 @@ func (h *Handler) CreateProxy(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Log create proxy action
+	if h.AuditService != nil {
+		user := auth.GetUserFromContext(r.Context())
+		username := "unknown"
+		userID := "unknown"
+		if user != nil {
+			username = user.Username
+			userID = user.ID
+		}
+		ipAddress := r.RemoteAddr
+		if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
+			ipAddress = ip
+		}
+		h.AuditService.Log("CREATE_PROXY", fmt.Sprintf("Proxy '%s' created for domain '%s'", proxy.ID, proxy.Domain), userID, username, ipAddress)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	if err := json.NewEncoder(w).Encode(proxy); err != nil {
@@ -260,6 +280,22 @@ func (h *Handler) UpdateProxy(w http.ResponseWriter, r *http.Request) {
 		h.HealthService.StopHealthCheck(proxy.ID)
 	}
 
+	// Log update proxy action
+	if h.AuditService != nil {
+		user := auth.GetUserFromContext(r.Context())
+		username := "unknown"
+		userID := "unknown"
+		if user != nil {
+			username = user.Username
+			userID = user.ID
+		}
+		ipAddress := r.RemoteAddr
+		if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
+			ipAddress = ip
+		}
+		h.AuditService.Log("UPDATE_PROXY", fmt.Sprintf("Proxy '%s' updated for domain '%s'", proxy.ID, proxy.Domain), userID, username, ipAddress)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(proxy); err != nil {
@@ -282,6 +318,22 @@ func (h *Handler) DeleteProxy(w http.ResponseWriter, r *http.Request) {
 	if err := h.CaddyClient.DeleteProxy(id); err != nil {
 		http.Error(w, fmt.Sprintf(`{"error": "Failed to delete proxy from Caddy: %v"}`, err), http.StatusInternalServerError)
 		return
+	}
+
+	// Log delete proxy action
+	if h.AuditService != nil {
+		user := auth.GetUserFromContext(r.Context())
+		username := "unknown"
+		userID := "unknown"
+		if user != nil {
+			username = user.Username
+			userID = user.ID
+		}
+		ipAddress := r.RemoteAddr
+		if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
+			ipAddress = ip
+		}
+		h.AuditService.Log("DELETE_PROXY", fmt.Sprintf("Proxy '%s' deleted", id), userID, username, ipAddress)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -396,4 +448,23 @@ func extractIDFromPath(path string) string {
 		return parts[3]
 	}
 	return ""
+}
+
+// GetAuditLog returns the most recent audit log entries
+func (h *Handler) GetAuditLog(w http.ResponseWriter, r *http.Request) {
+	entries, err := h.AuditService.GetRecentEntries(200)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": "Failed to retrieve audit log: %v"}`, err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
+		"entries": entries,
+		"count":   len(entries),
+	}); err != nil {
+		// Log error if needed, but response is already written
+		return
+	}
 }

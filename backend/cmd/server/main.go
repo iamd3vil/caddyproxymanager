@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/sarat/caddyproxymanager/internal/handlers"
+	"github.com/sarat/caddyproxymanager/pkg/audit"
 	"github.com/sarat/caddyproxymanager/pkg/auth"
 	"github.com/sarat/caddyproxymanager/pkg/caddy"
 	"github.com/sarat/caddyproxymanager/pkg/health"
@@ -156,6 +157,7 @@ func setupRoutes(
 	mux.HandleFunc("GET /api/proxies/{id}/status", corsHandler(authMiddleware.RequireAuth(handler.GetProxyStatus)))
 	mux.HandleFunc("GET /api/status", corsHandler(authMiddleware.RequireAuth(handler.Status)))
 	mux.HandleFunc("POST /api/reload", corsHandler(authMiddleware.RequireAuth(handler.Reload)))
+	mux.HandleFunc("GET /api/audit-log", corsHandler(authMiddleware.RequireAuth(handler.GetAuditLog)))
 }
 
 // setupStaticHandler configures serving of static files with SPA fallback support
@@ -267,9 +269,12 @@ func main() {
 	authStorage := initializeAuthStorage(cfg.dataDir)
 	startSessionCleanup(ctx, authStorage, &waitGroup)
 
+	// Initialize audit logging
+	auditService := audit.NewService(cfg.dataDir)
+
 	// Create HTTP handlers and middleware
-	handler := handlers.New(caddyClient, healthService)
-	authHandler := handlers.NewAuthHandler(authStorage)
+	handler := handlers.New(caddyClient, healthService, auditService)
+	authHandler := handlers.NewAuthHandler(authStorage, auditService)
 	authMiddleware := auth.NewMiddleware(authStorage)
 
 	// Configure HTTP routing
