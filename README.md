@@ -11,6 +11,10 @@ A modern web-based management interface for Caddy reverse proxy configurations, 
 - **🐳 Containerized**: Complete Docker setup with all dependencies included
 - **🔧 Easy Configuration**: No complex config files - manage everything through the UI
 - **📊 Status Monitoring**: Real-time proxy status and health monitoring
+- **🏥 Health Checks**: Monitor upstream server health with configurable intervals and failure thresholds
+- **📝 Custom Headers**: Add custom request/response headers for enhanced functionality
+- **🛡️ IP Access Control**: Whitelist or blacklist IP addresses for advanced security
+- **📋 Audit Logging**: Comprehensive logging of all configuration changes
 
 ## 🚀 Quick Start
 
@@ -64,6 +68,36 @@ npm run build
    - **Domain**: Your domain/subdomain (e.g., `api.example.com`)
    - **Target URL**: Where to proxy requests (e.g., `http://localhost:3000`)
    - **SSL Mode**: Choose automatic HTTPS or HTTP-only
+
+### Advanced Proxy Features
+
+#### Health Checks
+Monitor the health of your upstream servers:
+- **Enable Health Checks**: Toggle monitoring for each proxy
+- **Check Interval**: Configure how often to check (default: 30 seconds)
+- **Timeout**: Set request timeout for health checks
+- **Failure Threshold**: Number of consecutive failures before marking as unhealthy
+- **Success Threshold**: Number of consecutive successes to mark as healthy again
+
+#### Custom Headers
+Add custom headers to requests and responses:
+- **Request Headers**: Headers sent to upstream servers
+- **Response Headers**: Headers returned to clients
+- **Common Use Cases**: CORS headers, authentication tokens, custom API headers
+
+#### IP Access Control
+Restrict access based on client IP addresses:
+- **Whitelist Mode**: Only allow specified IP addresses/ranges
+- **Blacklist Mode**: Block specified IP addresses/ranges
+- **CIDR Support**: Use CIDR notation for IP ranges (e.g., `192.168.1.0/24`)
+- **Multiple IPs**: Add multiple IP addresses or ranges separated by commas
+
+#### Audit Logging
+All configuration changes are automatically logged:
+- **User Actions**: Track who made what changes
+- **Timestamps**: When changes were made
+- **Change Details**: What was modified
+- **System Events**: Automatic system actions and health check status changes
 
 ### SSL Certificate Options
 
