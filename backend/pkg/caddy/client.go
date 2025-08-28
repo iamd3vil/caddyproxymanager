@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -22,7 +23,6 @@ import (
 const (
 	SSLModeAuto = "auto"
 	SSLModeNone = "none"
-	AuthTrue    = "true"
 )
 
 // Client handles communication with Caddy Admin API
@@ -51,7 +51,7 @@ func New(baseURL, configFile string) *Client {
 
 	// Load existing metadata
 	if err := client.loadMetadataFromFile(); err != nil {
-		fmt.Printf("Warning: Failed to load metadata: %v\n", err)
+		log.Printf("Warning: Failed to load metadata: %v", err)
 	}
 
 	return client
@@ -63,12 +63,12 @@ func validateIPOrCIDR(ipOrCIDR string) error {
 	if ip := net.ParseIP(ipOrCIDR); ip != nil {
 		return nil
 	}
-	
+
 	// Try parsing as CIDR range
 	if _, _, err := net.ParseCIDR(ipOrCIDR); err == nil {
 		return nil
 	}
-	
+
 	return fmt.Errorf("invalid IP address or CIDR range: %s", ipOrCIDR)
 }
 
@@ -84,34 +84,32 @@ func validateIPList(ips []string) error {
 	return nil
 }
 
+// getCredential is a helper to get a credential from proxy config or environment variable
+func getCredential(proxy models.Proxy, key, envVar string) string {
+	if val, ok := proxy.DNSCredentials[key]; ok && val != "" {
+		return val
+	}
+	return os.Getenv(envVar)
+}
+
+// dnsConfigurators maps DNS provider names to their configuration functions
+var dnsConfigurators = map[string]func(*models.CaddyDNSProvider, models.Proxy){
+	"cloudflare": func(dp *models.CaddyDNSProvider, p models.Proxy) {
+		dp.APIToken = getCredential(p, "api_token", "CLOUDFLARE_API_TOKEN")
+		dp.Email = getCredential(p, "email", "CLOUDFLARE_EMAIL")
+	},
+	"digitalocean": func(dp *models.CaddyDNSProvider, p models.Proxy) {
+		dp.AuthToken = getCredential(p, "auth_token", "DO_AUTH_TOKEN")
+	},
+	"duckdns": func(dp *models.CaddyDNSProvider, p models.Proxy) {
+		dp.Token = getCredential(p, "token", "DUCKDNS_TOKEN")
+	},
+}
+
 // configureDNSProviderCredentials configures DNS provider credentials with environment fallback
 func configureDNSProviderCredentials(dnsProvider *models.CaddyDNSProvider, proxy models.Proxy) {
-	switch proxy.DNSProvider {
-	case "cloudflare":
-		// Use provided credentials or fall back to environment variables
-		if apiToken, ok := proxy.DNSCredentials["api_token"]; ok && apiToken != "" {
-			dnsProvider.APIToken = apiToken
-		} else if envToken := os.Getenv("CLOUDFLARE_API_TOKEN"); envToken != "" {
-			dnsProvider.APIToken = envToken
-		}
-
-		if email, ok := proxy.DNSCredentials["email"]; ok && email != "" {
-			dnsProvider.Email = email
-		} else if envEmail := os.Getenv("CLOUDFLARE_EMAIL"); envEmail != "" {
-			dnsProvider.Email = envEmail
-		}
-	case "digitalocean":
-		if authToken, ok := proxy.DNSCredentials["auth_token"]; ok && authToken != "" {
-			dnsProvider.AuthToken = authToken
-		} else if envToken := os.Getenv("DO_AUTH_TOKEN"); envToken != "" {
-			dnsProvider.AuthToken = envToken
-		}
-	case "duckdns":
-		if token, ok := proxy.DNSCredentials["token"]; ok && token != "" {
-			dnsProvider.Token = token
-		} else if envToken := os.Getenv("DUCKDNS_TOKEN"); envToken != "" {
-			dnsProvider.Token = envToken
-		}
+	if configurator, ok := dnsConfigurators[proxy.DNSProvider]; ok {
+		configurator(dnsProvider, proxy)
 	}
 }
 
@@ -145,6 +143,12 @@ func (c *Client) AddProxy(proxy models.Proxy) error {
 		return fmt.Errorf("invalid blocked IPs: %v", err)
 	}
 
+	// Build the route from the proxy model
+	newRoute, err := c.buildProxyRoute(proxy)
+	if err != nil {
+		return fmt.Errorf("failed to build proxy route: %v", err)
+	}
+
 	// Get current config
 	config, err := c.GetConfig()
 	if err != nil || config.Apps.HTTP.Servers == nil {
@@ -165,174 +169,18 @@ func (c *Client) AddProxy(proxy models.Proxy) error {
 	if proxy.SSLMode == SSLModeNone {
 		serverName = "http_only"
 		listenPorts = []string{":80"}
-		// Add specific port if domain includes port number
-		if strings.Contains(proxy.Domain, ":") {
-			parts := strings.Split(proxy.Domain, ":")
-			if len(parts) == 2 {
-				listenPorts = append(listenPorts, ":"+parts[1])
-			}
-		}
 	} else {
 		serverName = "https_enabled"
 		listenPorts = []string{":80", ":443"}
-		// Add specific port if domain includes port number
-		if strings.Contains(proxy.Domain, ":") {
-			parts := strings.Split(proxy.Domain, ":")
-			if len(parts) == 2 {
-				listenPorts = append(listenPorts, ":"+parts[1])
-			}
-		}
 	}
-
-	// Parse target URL to get proper dial address with port and scheme
-	dialAddr, useHTTPS, targetHost, err := parseTargetURL(proxy.TargetURL)
-	if err != nil {
-		return fmt.Errorf("invalid target URL: %v", err)
-	}
-
-	// Create reverse proxy handler with upstreams
-	reverseProxyHandler := models.CaddyHandler{
-		Handler: "reverse_proxy",
-		Upstreams: []models.CaddyUpstream{
-			{Dial: dialAddr},
-		},
-		// Set the Host header to the target hostname to avoid 421 Misdirected Request
-		Headers: &models.CaddyHeaders{
-			Request: &models.CaddyHeadersRequest{
-				Set: map[string][]string{
-					"Host": {targetHost},
-				},
-			},
-		},
-	}
-
-	// Add custom headers if provided
-	if len(proxy.CustomHeaders) > 0 {
-		if reverseProxyHandler.Headers == nil {
-			reverseProxyHandler.Headers = &models.CaddyHeaders{
-				Request: &models.CaddyHeadersRequest{
-					Set: make(map[string][]string),
-				},
-			}
-		} else if reverseProxyHandler.Headers.Request == nil {
-			reverseProxyHandler.Headers.Request = &models.CaddyHeadersRequest{
-				Set: make(map[string][]string),
-			}
-		}
-
-		// Add custom headers to the existing Host header
-		for key, value := range proxy.CustomHeaders {
-			reverseProxyHandler.Headers.Request.Set[key] = []string{value}
-		}
-	}
-
-	// Add HTTPS transport if target uses HTTPS
-	if useHTTPS {
-		reverseProxyHandler.Transport = &models.CaddyTransport{
-			Protocol: "http",
-			TLS:      &struct{}{},
-		}
-	}
-
-	// Prepare handlers array
-	handlers := []models.CaddyHandler{}
-
-	// Add basic auth handler if enabled
-	if proxy.BasicAuth != nil && proxy.BasicAuth.Enabled && proxy.BasicAuth.Username != "" && proxy.BasicAuth.Password != "" {
-		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(proxy.BasicAuth.Password), bcrypt.DefaultCost)
-		if err != nil {
-			return fmt.Errorf("failed to hash password: %v", err)
-		}
-
-		basicAuthHandler := models.CaddyHandler{
-			Handler: "authentication",
-			Providers: map[string]models.CaddyAuthProvider{
-				"http_basic": {
-					Accounts: []models.CaddyAccount{
-						{
-							Username: proxy.BasicAuth.Username,
-							Password: string(hashedPassword),
-						},
-					},
-				},
-			},
-		}
-
-		handlers = append(handlers, basicAuthHandler)
-	}
-
-	// Add the reverse proxy handler
-	handlers = append(handlers, reverseProxyHandler)
-
-	// Add new route for this proxy
-	newRoute := models.CaddyRoute{
-		ID:     proxy.ID,
-		Handle: handlers,
-	}
-
-	// Create base matcher
-	baseMatch := models.CaddyMatch{}
-	
-	// Only add host matcher for domain names without ports
-	if !strings.Contains(proxy.Domain, ":") {
-		baseMatch.Host = []string{proxy.Domain}
-	}
-
-	// Create additional routes for IP filtering if needed
-	var routeMatches []models.CaddyMatch
-	
-	// Handle AllowedIPs (whitelist)
-	if len(proxy.AllowedIPs) > 0 {
-		// Filter non-empty IPs
-		allowedIPs := make([]string, 0, len(proxy.AllowedIPs))
-		for _, ip := range proxy.AllowedIPs {
-			if ip = strings.TrimSpace(ip); ip != "" {
-				allowedIPs = append(allowedIPs, ip)
-			}
-		}
-		
-		if len(allowedIPs) > 0 {
-			allowMatch := baseMatch
-			allowMatch.RemoteIP = &models.CaddyRemoteIPMatch{
-				Ranges: allowedIPs,
-			}
-			routeMatches = append(routeMatches, allowMatch)
-		}
-	} else if len(proxy.BlockedIPs) > 0 {
-		// Handle BlockedIPs (blacklist) - only if no whitelist is specified
-		// Filter non-empty IPs
-		blockedIPs := make([]string, 0, len(proxy.BlockedIPs))
-		for _, ip := range proxy.BlockedIPs {
-			if ip = strings.TrimSpace(ip); ip != "" {
-				blockedIPs = append(blockedIPs, ip)
-			}
-		}
-		
-		if len(blockedIPs) > 0 {
-			// Create a matcher that allows everything except blocked IPs
-			blockMatch := baseMatch
-			blockMatch.Not = &models.CaddyMatch{
-				RemoteIP: &models.CaddyRemoteIPMatch{
-					Ranges: blockedIPs,
-				},
-			}
-			routeMatches = append(routeMatches, blockMatch)
-		}
-	}
-
-	// If no IP filtering, use base match
-	if len(routeMatches) == 0 && (len(baseMatch.Host) > 0) {
-		routeMatches = append(routeMatches, baseMatch)
-	}
-
-	// Set the match conditions
-	if len(routeMatches) > 0 {
-		newRoute.Match = routeMatches
+	// Add specific port if domain includes port number
+	if _, port, err := net.SplitHostPort(proxy.Domain); err == nil {
+		listenPorts = append(listenPorts, ":"+port)
 	}
 
 	// Add route to appropriate server
 	if server, exists := config.Apps.HTTP.Servers[serverName]; exists {
-		server.Routes = append(server.Routes, newRoute)
+		server.Routes = append(server.Routes, *newRoute)
 
 		// Add any new ports to the listen array
 		for _, port := range listenPorts {
@@ -354,7 +202,7 @@ func (c *Client) AddProxy(proxy models.Proxy) error {
 		// Create new server
 		newServer := models.CaddyServer{
 			Listen: listenPorts,
-			Routes: []models.CaddyRoute{newRoute},
+			Routes: []models.CaddyRoute{*newRoute},
 		}
 
 		// Disable automatic HTTPS for HTTP-only servers
@@ -386,11 +234,144 @@ func (c *Client) AddProxy(proxy models.Proxy) error {
 	// Save metadata
 	c.metadata.Set(proxy)
 	if err := c.saveMetadataToFile(); err != nil {
-		fmt.Printf("Warning: Failed to save metadata: %v\n", err)
+		log.Printf("Warning: Failed to save metadata: %v", err)
 	}
 
 	// Update Caddy configuration
 	return c.updateConfig(config)
+}
+
+// buildProxyRoute creates a Caddy route from a proxy model
+func (c *Client) buildProxyRoute(proxy models.Proxy) (*models.CaddyRoute, error) {
+	var handlers []models.CaddyHandler
+
+	// Add basic auth handler if enabled
+	if proxy.BasicAuth != nil && proxy.BasicAuth.Enabled && proxy.BasicAuth.Username != "" && proxy.BasicAuth.Password != "" {
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(proxy.BasicAuth.Password), bcrypt.DefaultCost)
+		if err != nil {
+			return nil, fmt.Errorf("failed to hash password: %v", err)
+		}
+		basicAuthHandler := models.CaddyHandler{
+			Handler: "authentication",
+			Providers: map[string]models.CaddyAuthProvider{
+				"http_basic": {
+					Accounts: []models.CaddyAccount{
+						{
+							Username: proxy.BasicAuth.Username,
+							Password: string(hashedPassword),
+						},
+					},
+				},
+			},
+		}
+		handlers = append(handlers, basicAuthHandler)
+	}
+
+	// Build and add the reverse proxy handler
+	reverseProxyHandler, err := c.buildReverseProxyHandler(proxy)
+	if err != nil {
+		return nil, err
+	}
+	handlers = append(handlers, *reverseProxyHandler)
+
+	// Build matchers for the route
+	matchers := c.buildRouteMatchers(proxy)
+
+	// Create the final route
+	newRoute := models.CaddyRoute{
+		ID:     proxy.ID,
+		Handle: handlers,
+		Match:  matchers,
+	}
+
+	return &newRoute, nil
+}
+
+// buildReverseProxyHandler creates a Caddy reverse_proxy handler from a proxy model
+func (c *Client) buildReverseProxyHandler(proxy models.Proxy) (*models.CaddyHandler, error) {
+	dialAddr, useHTTPS, targetHost, err := parseTargetURL(proxy.TargetURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid target URL: %v", err)
+	}
+
+	// Create the handler with upstream and Host header override
+	handler := models.CaddyHandler{
+		Handler: "reverse_proxy",
+		Upstreams: []models.CaddyUpstream{
+			{Dial: dialAddr},
+		},
+		Headers: &models.CaddyHeaders{
+			Request: &models.CaddyHeadersRequest{
+				Set: map[string][]string{
+					"Host": {targetHost},
+				},
+			},
+		},
+	}
+
+	// Add custom headers
+	if len(proxy.CustomHeaders) > 0 {
+		for key, value := range proxy.CustomHeaders {
+			handler.Headers.Request.Set[key] = []string{value}
+		}
+	}
+
+	// Configure HTTPS transport if the target is HTTPS
+	if useHTTPS {
+		handler.Transport = &models.CaddyTransport{
+			Protocol: "http",
+			TLS:      &struct{}{},
+		}
+	}
+
+	return &handler, nil
+}
+
+// buildRouteMatchers creates Caddy matchers from a proxy model, including IP filtering
+func (c *Client) buildRouteMatchers(proxy models.Proxy) []models.CaddyMatch {
+	baseMatch := models.CaddyMatch{}
+	// Host matcher only works for domains without ports
+	if !strings.Contains(proxy.Domain, ":") {
+		baseMatch.Host = []string{proxy.Domain}
+	}
+
+	var routeMatches []models.CaddyMatch
+
+	// Handle AllowedIPs (whitelist)
+	if len(proxy.AllowedIPs) > 0 {
+		var allowedIPs []string
+		for _, ip := range proxy.AllowedIPs {
+			if ip = strings.TrimSpace(ip); ip != "" {
+				allowedIPs = append(allowedIPs, ip)
+			}
+		}
+		if len(allowedIPs) > 0 {
+			allowMatch := baseMatch
+			allowMatch.RemoteIP = &models.CaddyRemoteIPMatch{Ranges: allowedIPs}
+			routeMatches = append(routeMatches, allowMatch)
+		}
+	} else if len(proxy.BlockedIPs) > 0 { // Handle BlockedIPs (blacklist) only if no whitelist
+		var blockedIPs []string
+		for _, ip := range proxy.BlockedIPs {
+			if ip = strings.TrimSpace(ip); ip != "" {
+				blockedIPs = append(blockedIPs, ip)
+			}
+		}
+		if len(blockedIPs) > 0 {
+			blockMatch := baseMatch
+			blockMatch.Not = &models.CaddyMatch{
+				RemoteIP: &models.CaddyRemoteIPMatch{Ranges: blockedIPs},
+			}
+			routeMatches = append(routeMatches, blockMatch)
+		}
+	}
+
+	// If no IP filtering was applied but we have a host, use the base match
+	if len(routeMatches) == 0 && len(baseMatch.Host) > 0 {
+		routeMatches = append(routeMatches, baseMatch)
+	}
+
+	return routeMatches
 }
 
 // UpdateProxy updates an existing proxy configuration in Caddy
@@ -407,7 +388,7 @@ func (c *Client) DeleteProxy(id string) error {
 	// Remove metadata
 	c.metadata.Delete(id)
 	if err := c.saveMetadataToFile(); err != nil {
-		fmt.Printf("Warning: Failed to save metadata: %v\n", err)
+		log.Printf("Warning: Failed to save metadata: %v", err)
 	}
 	// Get current config to find which server contains the route
 	config, err := c.GetConfig()
@@ -509,7 +490,7 @@ func (c *Client) updateConfig(config *models.CaddyConfig) error {
 	// Save config to file after successful update
 	if err := c.saveConfigToFile(config); err != nil {
 		// Log error but don't fail the operation since Caddy was updated successfully
-		fmt.Printf("Warning: Failed to save config to file: %v\n", err)
+		log.Printf("Warning: Failed to save config to file: %v", err)
 	}
 
 	return nil
@@ -611,9 +592,9 @@ func (c *Client) ParseProxiesFromConfig(config *models.CaddyConfig) []models.Pro
 
 			// Find the reverse_proxy handler (might not be the first one due to authentication)
 			var reverseProxyHandler *models.CaddyHandler
-			for _, handler := range route.Handle {
-				if handler.Handler == "reverse_proxy" {
-					reverseProxyHandler = &handler
+			for i := range route.Handle {
+				if route.Handle[i].Handler == "reverse_proxy" {
+					reverseProxyHandler = &route.Handle[i]
 					break
 				}
 			}
