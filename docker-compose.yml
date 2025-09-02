@@ -23,6 +23,15 @@ services:
       # - CLOUDFLARE_API_TOKEN=your-api-token
       # - DO_AUTH_TOKEN=your-do-token
       # - DUCKDNS_TOKEN=your-duckdns-token
+      # - NAMECHEAP_API_KEY=your-namecheap-key
+      # - NAMECHEAP_API_USER=your-username
+      # - NAMECHEAP_CLIENT_IP=your-server-ip
+      # - AWS_ACCESS_KEY_ID=your-aws-access-key
+      # - AWS_SECRET_ACCESS_KEY=your-aws-secret-key
+      # - AWS_REGION=us-east-1
+      # - HETZNER_API_TOKEN=your-hetzner-token
+      # - GANDI_BEARER_TOKEN=your-gandi-token
+      # - DNSIMPLE_API_ACCESS_TOKEN=your-dnsimple-token
     restart: unless-stopped
     networks:
       - proxy-network

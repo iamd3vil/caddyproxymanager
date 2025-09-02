@@ -234,12 +234,11 @@ const updateDNSCredentials = () => {
   formData.value.dns_credentials = {}
   
   // Set default credential structure based on provider
-  if (provider === 'cloudflare') {
-    formData.value.dns_credentials = { api_token: '', email: '' }
-  } else if (provider === 'digitalocean') {
-    formData.value.dns_credentials = { auth_token: '' }
-  } else if (provider === 'duckdns') {
-    formData.value.dns_credentials = { token: '' }
+  const selectedProvider = dnsProviders.find(p => p.value === provider)
+  if (selectedProvider) {
+    selectedProvider.fields.forEach(field => {
+      formData.value.dns_credentials[field.key] = ''
+    })
   }
 }
 
@@ -278,6 +277,27 @@ const dnsProviders = [
     label: 'DuckDNS',
     fields: [
       { key: 'token', label: 'Token', type: 'password', required: true }
+    ]
+  },
+  { 
+    value: 'hetzner', 
+    label: 'Hetzner',
+    fields: [
+      { key: 'api_token', label: 'API Token', type: 'password', required: true }
+    ]
+  },
+  { 
+    value: 'gandi', 
+    label: 'Gandi',
+    fields: [
+      { key: 'bearer_token', label: 'Bearer Token', type: 'password', required: true }
+    ]
+  },
+  { 
+    value: 'dnsimple', 
+    label: 'DNSimple',
+    fields: [
+      { key: 'api_access_token', label: 'API Access Token', type: 'password', required: true }
     ]
   }
 ]
@@ -592,7 +612,7 @@ onMounted(() => {
                     </div>
                   </div>
                   
-                  <!-- Help text for Cloudflare -->
+                  <!-- Help text for DNS providers -->
                   <div v-if="formData.dns_provider === 'cloudflare'" class="alert alert-info mt-4">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
@@ -600,6 +620,38 @@ onMounted(() => {
                     <div class="text-xs">
                       <p><strong>API Token:</strong> Create a token with Zone:DNS:Edit permissions</p>
                       <p><strong>Email:</strong> Only needed for legacy API key authentication</p>
+                    </div>
+                  </div>
+                  
+                  
+                  
+                  <div v-if="formData.dns_provider === 'hetzner'" class="alert alert-info mt-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <div class="text-xs">
+                      <p><strong>API Token:</strong> Create token in Hetzner Cloud Console > Security > API Tokens</p>
+                      <p><strong>Permissions:</strong> Read & Write access required</p>
+                    </div>
+                  </div>
+                  
+                  <div v-if="formData.dns_provider === 'gandi'" class="alert alert-info mt-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <div class="text-xs">
+                      <p><strong>Bearer Token:</strong> Create Personal Access Token in account settings</p>
+                      <p><strong>Note:</strong> API Key authentication is no longer supported</p>
+                    </div>
+                  </div>
+                  
+                  <div v-if="formData.dns_provider === 'dnsimple'" class="alert alert-info mt-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <div class="text-xs">
+                      <p><strong>API Access Token:</strong> Generate token in DNSimple account settings</p>
+                      <p><strong>Permissions:</strong> Domain record management required</p>
                     </div>
                   </div>
                 </div>
@@ -1045,7 +1097,7 @@ onMounted(() => {
                     </div>
                   </div>
                   
-                  <!-- Help text for Cloudflare -->
+                  <!-- Help text for DNS providers -->
                   <div v-if="formData.dns_provider === 'cloudflare'" class="alert alert-info mt-4">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
@@ -1053,6 +1105,38 @@ onMounted(() => {
                     <div class="text-xs">
                       <p><strong>API Token:</strong> Create a token with Zone:DNS:Edit permissions</p>
                       <p><strong>Email:</strong> Only needed for legacy API key authentication</p>
+                    </div>
+                  </div>
+                  
+                  
+                  
+                  <div v-if="formData.dns_provider === 'hetzner'" class="alert alert-info mt-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <div class="text-xs">
+                      <p><strong>API Token:</strong> Create token in Hetzner Cloud Console > Security > API Tokens</p>
+                      <p><strong>Permissions:</strong> Read & Write access required</p>
+                    </div>
+                  </div>
+                  
+                  <div v-if="formData.dns_provider === 'gandi'" class="alert alert-info mt-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <div class="text-xs">
+                      <p><strong>Bearer Token:</strong> Create Personal Access Token in account settings</p>
+                      <p><strong>Note:</strong> API Key authentication is no longer supported</p>
+                    </div>
+                  </div>
+                  
+                  <div v-if="formData.dns_provider === 'dnsimple'" class="alert alert-info mt-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <div class="text-xs">
+                      <p><strong>API Access Token:</strong> Generate token in DNSimple account settings</p>
+                      <p><strong>Permissions:</strong> Domain record management required</p>
                     </div>
                   </div>
                 </div>

@@ -95,11 +95,15 @@ type CaddyDNSChallenge struct {
 }
 
 type CaddyDNSProvider struct {
-	Name      string `json:"name"`
-	APIToken  string `json:"api_token,omitempty"`
-	AuthToken string `json:"auth_token,omitempty"`
-	Token     string `json:"token,omitempty"`
-	Email     string `json:"email,omitempty"`
+	Name             string `json:"name"`
+	APIToken         string `json:"api_token,omitempty"`
+	AuthToken        string `json:"auth_token,omitempty"`
+	Token            string `json:"token,omitempty"`
+	Email            string `json:"email,omitempty"`
+	// Gandi
+	BearerToken       string `json:"bearer_token,omitempty"`
+	// DNSimple
+	APIAccessToken    string `json:"api_access_token,omitempty"`
 }
 
 type CaddyTLSPolicy struct {

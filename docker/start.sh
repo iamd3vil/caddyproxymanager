@@ -20,7 +20,7 @@ if /usr/bin/caddy list-modules | grep -q "dns.providers"; then
 else
     echo "   ❌ No DNS providers found"
 fi
-echo "   Expected: cloudflare, digitalocean, duckdns"
+echo "   Expected: cloudflare, digitalocean, duckdns, hetzner, gandi, dnsimple"
 echo ""
 
 # Start supervisor to manage both processes

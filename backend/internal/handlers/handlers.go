@@ -436,6 +436,21 @@ func (h *Handler) validateDNSCredentials(provider string, credentials map[string
 		if token == "" && os.Getenv("DUCKDNS_TOKEN") == "" {
 			return fmt.Errorf("DuckDNS token is required (provide in request or set DUCKDNS_TOKEN environment variable)")
 		}
+	case "hetzner":
+		apiToken := credentials["api_token"]
+		if apiToken == "" && os.Getenv("HETZNER_API_TOKEN") == "" {
+			return fmt.Errorf("Hetzner API token is required (provide in request or set HETZNER_API_TOKEN environment variable)")
+		}
+	case "gandi":
+		bearerToken := credentials["bearer_token"]
+		if bearerToken == "" && os.Getenv("GANDI_BEARER_TOKEN") == "" {
+			return fmt.Errorf("Gandi bearer token is required (provide in request or set GANDI_BEARER_TOKEN environment variable)")
+		}
+	case "dnsimple":
+		apiAccessToken := credentials["api_access_token"]
+		if apiAccessToken == "" && os.Getenv("DNSIMPLE_API_ACCESS_TOKEN") == "" {
+			return fmt.Errorf("DNSimple API access token is required (provide in request or set DNSIMPLE_API_ACCESS_TOKEN environment variable)")
+		}
 	default:
 		return fmt.Errorf("Unsupported DNS provider: %s", provider)
 	}

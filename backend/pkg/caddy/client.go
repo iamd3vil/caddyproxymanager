@@ -104,6 +104,15 @@ var dnsConfigurators = map[string]func(*models.CaddyDNSProvider, models.Proxy){
 	"duckdns": func(dp *models.CaddyDNSProvider, p models.Proxy) {
 		dp.Token = getCredential(p, "token", "DUCKDNS_TOKEN")
 	},
+	"hetzner": func(dp *models.CaddyDNSProvider, p models.Proxy) {
+		dp.APIToken = getCredential(p, "api_token", "HETZNER_API_TOKEN")
+	},
+	"gandi": func(dp *models.CaddyDNSProvider, p models.Proxy) {
+		dp.BearerToken = getCredential(p, "bearer_token", "GANDI_BEARER_TOKEN")
+	},
+	"dnsimple": func(dp *models.CaddyDNSProvider, p models.Proxy) {
+		dp.APIAccessToken = getCredential(p, "api_access_token", "DNSIMPLE_API_ACCESS_TOKEN")
+	},
 }
 
 // configureDNSProviderCredentials configures DNS provider credentials with environment fallback

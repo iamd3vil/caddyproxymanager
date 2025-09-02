@@ -6,7 +6,7 @@ A modern web-based management interface for Caddy reverse proxy configurations, 
 
 - **🌐 Web UI**: Clean, modern interface built with Vue 3, Vite, and DaisyUI
 - **🔒 Automatic HTTPS**: Let's Encrypt integration with HTTP-01 and DNS-01 challenges
-- **🌍 DNS Challenge Support**: Works behind firewalls with DNS providers (Cloudflare, DigitalOcean, DuckDNS)
+- **🌍 DNS Challenge Support**: Works behind firewalls with DNS providers (Cloudflare, DigitalOcean, DuckDNS, Hetzner, Gandi, DNSimple)
 - **⚡ Real-time Management**: Direct integration with Caddy Admin API
 - **🐳 Containerized**: Complete Docker setup with all dependencies included
 - **🔧 Easy Configuration**: No complex config files - manage everything through the UI
@@ -125,6 +125,16 @@ DO_AUTH_TOKEN=your-do-token
 
 # DuckDNS
 DUCKDNS_TOKEN=your-duckdns-token
+
+
+# Hetzner
+HETZNER_API_TOKEN=your-hetzner-token
+
+# Gandi
+GANDI_BEARER_TOKEN=your-gandi-token
+
+# DNSimple
+DNSIMPLE_API_ACCESS_TOKEN=your-dnsimple-token
 ```
 
 ### Supported DNS Providers
@@ -134,6 +144,9 @@ DUCKDNS_TOKEN=your-duckdns-token
 | **Cloudflare** | API Token | Create token with Zone:DNS:Edit permissions |
 | **DigitalOcean** | Auth Token | Personal Access Token with write scope |
 | **DuckDNS** | Token | Your DuckDNS account token |
+| **Hetzner** | API Token | Create token in Hetzner Cloud Console |
+| **Gandi** | Bearer Token | Personal Access Token (API Key deprecated) |
+| **DNSimple** | API Access Token | Generate token in account settings |
 
 ## 🛠 Development
 
@@ -188,7 +201,10 @@ The project uses xcaddy to build Caddy with DNS plugins:
 xcaddy build \
     --with github.com/caddy-dns/cloudflare \
     --with github.com/caddy-dns/digitalocean \
-    --with github.com/caddy-dns/duckdns
+    --with github.com/caddy-dns/duckdns \
+    --with github.com/caddy-dns/hetzner \
+    --with github.com/caddy-dns/gandi \
+    --with github.com/caddy-dns/dnsimple
 ```
 
 ## 🔧 Configuration
@@ -202,6 +218,9 @@ xcaddy build \
 | `CLOUDFLARE_API_TOKEN` | Cloudflare DNS API token | - |
 | `DO_AUTH_TOKEN` | DigitalOcean auth token | - |
 | `DUCKDNS_TOKEN` | DuckDNS token | - |
+| `HETZNER_API_TOKEN` | Hetzner DNS API token | - |
+| `GANDI_BEARER_TOKEN` | Gandi bearer token | - |
+| `DNSIMPLE_API_ACCESS_TOKEN` | DNSimple API access token | - |
 
 ### Ports
 

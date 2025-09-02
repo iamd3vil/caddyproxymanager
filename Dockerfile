@@ -8,7 +8,10 @@ FROM caddy:2-builder AS caddy-builder
 RUN xcaddy build \
     --with github.com/caddy-dns/cloudflare \
     --with github.com/caddy-dns/digitalocean \
-    --with github.com/caddy-dns/duckdns
+    --with github.com/caddy-dns/duckdns \
+    --with github.com/caddy-dns/hetzner \
+    --with github.com/caddy-dns/gandi \
+    --with github.com/caddy-dns/dnsimple
 
 # Stage 2: Build Go backend
 FROM golang:1.25-alpine AS backend-builder
