@@ -205,7 +205,7 @@ func (c *Client) buildRedirectRoute(redirect models.Redirect) (*models.CaddyRout
 
 	// Add path preservation if enabled
 	if redirect.PreservePath {
-		destinationURL = redirect.DestinationURL + "{uri}"
+		destinationURL = redirect.DestinationURL + "{http.request.uri}"
 	}
 
 	// Use two handlers: first set headers, then respond
@@ -349,10 +349,10 @@ func (c *Client) ParseRedirectsFromConfig(config *models.CaddyConfig) []models.R
 				UpdatedAt:      "2024-01-01T00:00:00Z", // Default timestamp
 			}
 
-			// Check if path is preserved (destination URL ends with {uri})
-			if strings.HasSuffix(destinationURL, "{uri}") {
+			// Check if path is preserved (destination URL ends with {http.request.uri})
+			if strings.HasSuffix(destinationURL, "{http.request.uri}") {
 				redirect.PreservePath = true
-				redirect.DestinationURL = strings.TrimSuffix(destinationURL, "{uri}")
+				redirect.DestinationURL = strings.TrimSuffix(destinationURL, "{http.request.uri}")
 			}
 
 			// Extract source domains from matchers
