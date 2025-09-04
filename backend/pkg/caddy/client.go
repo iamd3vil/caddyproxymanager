@@ -226,17 +226,16 @@ func (c *Client) buildRedirectRoute(redirect models.Redirect) (*models.CaddyRout
 	// Build matchers for all source domains
 	var matchers []models.CaddyMatch
 	for _, domain := range redirect.SourceDomains {
-		// Only add host matcher if domain doesn't contain port
-		if !strings.Contains(domain, ":") {
-			matchers = append(matchers, models.CaddyMatch{
-				Host: []string{domain},
-			})
-		}
+		// Always create a host matcher for each domain, regardless of port
+		// Caddy can handle host matching with ports correctly
+		matchers = append(matchers, models.CaddyMatch{
+			Host: []string{domain},
+		})
 	}
 
-	// If no host matchers were created (all domains have ports), create a generic matcher
+	// If no matchers were created (empty source domains), this is an error
 	if len(matchers) == 0 {
-		matchers = append(matchers, models.CaddyMatch{})
+		return nil, fmt.Errorf("redirect must have at least one source domain")
 	}
 
 	// Create the route with both handlers
