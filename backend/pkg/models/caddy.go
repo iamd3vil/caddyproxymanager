@@ -32,9 +32,9 @@ type CaddyRoute struct {
 }
 
 type CaddyMatch struct {
-	Host     []string          `json:"host,omitempty"`
+	Host     []string            `json:"host,omitempty"`
 	RemoteIP *CaddyRemoteIPMatch `json:"remote_ip,omitempty"`
-	Not      *CaddyMatch       `json:"not,omitempty"` // For inverting matches (e.g., blocking IPs)
+	Not      *CaddyMatch         `json:"not,omitempty"` // For inverting matches (e.g., blocking IPs)
 }
 
 type CaddyRemoteIPMatch struct {
@@ -47,6 +47,14 @@ type CaddyHandler struct {
 	Transport *CaddyTransport              `json:"transport,omitempty"`
 	Headers   *CaddyHeaders                `json:"headers,omitempty"`
 	Providers map[string]CaddyAuthProvider `json:"providers,omitempty"` // For basic auth - must be a map
+	// Redirect handler fields (legacy)
+	To         string `json:"to,omitempty"`          // Redirect destination URL
+	StatusCode int    `json:"status_code,omitempty"` // HTTP status code (301, 302)
+	// Static response handler fields
+	ResponseHeaders map[string][]string `json:"response_headers,omitempty"` // Response headers for static_response
+	// Headers handler fields (direct fields, not nested)
+	Request  *CaddyHeadersRequest  `json:"request,omitempty"`
+	Response *CaddyHeadersResponse `json:"response,omitempty"`
 }
 
 type CaddyAuthProvider struct {
@@ -59,10 +67,15 @@ type CaddyAccount struct {
 }
 
 type CaddyHeaders struct {
-	Request *CaddyHeadersRequest `json:"request,omitempty"`
+	Request  *CaddyHeadersRequest  `json:"request,omitempty"`
+	Response *CaddyHeadersResponse `json:"response,omitempty"`
 }
 
 type CaddyHeadersRequest struct {
+	Set map[string][]string `json:"set,omitempty"`
+}
+
+type CaddyHeadersResponse struct {
 	Set map[string][]string `json:"set,omitempty"`
 }
 
@@ -95,15 +108,15 @@ type CaddyDNSChallenge struct {
 }
 
 type CaddyDNSProvider struct {
-	Name             string `json:"name"`
-	APIToken         string `json:"api_token,omitempty"`
-	AuthToken        string `json:"auth_token,omitempty"`
-	Token            string `json:"token,omitempty"`
-	Email            string `json:"email,omitempty"`
+	Name      string `json:"name"`
+	APIToken  string `json:"api_token,omitempty"`
+	AuthToken string `json:"auth_token,omitempty"`
+	Token     string `json:"token,omitempty"`
+	Email     string `json:"email,omitempty"`
 	// Gandi
-	BearerToken       string `json:"bearer_token,omitempty"`
+	BearerToken string `json:"bearer_token,omitempty"`
 	// DNSimple
-	APIAccessToken    string `json:"api_access_token,omitempty"`
+	APIAccessToken string `json:"api_access_token,omitempty"`
 }
 
 type CaddyTLSPolicy struct {

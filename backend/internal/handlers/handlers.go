@@ -483,3 +483,200 @@ func (h *Handler) GetAuditLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 }
+
+// GetRedirects retrieves all redirect configurations
+func (h *Handler) GetRedirects(w http.ResponseWriter, r *http.Request) {
+	// Get current Caddy configuration
+	config, err := h.CaddyClient.GetConfig()
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": "Failed to get Caddy config: %v"}`, err), http.StatusInternalServerError)
+		return
+	}
+
+	// Parse redirects from config
+	redirects := h.CaddyClient.ParseRedirectsFromConfig(config)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(map[string]any{
+		"redirects": redirects,
+		"count":     len(redirects),
+	}); err != nil {
+		// Log error if needed, but response is already written
+		return
+	}
+}
+
+// CreateRedirect creates a new redirect configuration
+func (h *Handler) CreateRedirect(w http.ResponseWriter, r *http.Request) {
+	var redirectReq struct {
+		SourceDomains  []string `json:"source_domains"`
+		DestinationURL string   `json:"destination_url"`
+		RedirectCode   int      `json:"redirect_code"`
+		PreservePath   bool     `json:"preserve_path"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&redirectReq); err != nil {
+		http.Error(w, `{"error": "Invalid JSON"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Validate required fields
+	if len(redirectReq.SourceDomains) == 0 || redirectReq.DestinationURL == "" {
+		http.Error(w, `{"error": "Source domains and destination URL are required"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Set default redirect code if not provided
+	if redirectReq.RedirectCode == 0 {
+		redirectReq.RedirectCode = 301
+	}
+
+	// Validate redirect code
+	if redirectReq.RedirectCode != 301 && redirectReq.RedirectCode != 302 {
+		http.Error(w, `{"error": "Redirect code must be 301 or 302"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Create new redirect
+	redirect := models.NewRedirect(redirectReq.SourceDomains, redirectReq.DestinationURL, redirectReq.RedirectCode, redirectReq.PreservePath)
+
+	// Add redirect to Caddy configuration
+	if err := h.CaddyClient.AddRedirect(*redirect); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": "Failed to add redirect to Caddy: %v"}`, err), http.StatusInternalServerError)
+		return
+	}
+
+	// Log create redirect action
+	if h.AuditService != nil {
+		user := auth.GetUserFromContext(r.Context())
+		username := "unknown"
+		userID := "unknown"
+		if user != nil {
+			username = user.Username
+			userID = user.ID
+		}
+		ipAddress := r.RemoteAddr
+		if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
+			ipAddress = ip
+		}
+		h.AuditService.Log("CREATE_REDIRECT", fmt.Sprintf("Redirect '%s' created from %v to '%s'", redirect.ID, redirect.SourceDomains, redirect.DestinationURL), userID, username, ipAddress)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	if err := json.NewEncoder(w).Encode(redirect); err != nil {
+		// Log error if needed, but response is already written
+		return
+	}
+}
+
+// UpdateRedirect updates an existing redirect configuration
+func (h *Handler) UpdateRedirect(w http.ResponseWriter, r *http.Request) {
+	id := extractIDFromPath(r.URL.Path)
+	if id == "" {
+		http.Error(w, `{"error": "Invalid redirect ID"}`, http.StatusBadRequest)
+		return
+	}
+
+	var redirectReq struct {
+		SourceDomains  []string `json:"source_domains"`
+		DestinationURL string   `json:"destination_url"`
+		RedirectCode   int      `json:"redirect_code"`
+		PreservePath   bool     `json:"preserve_path"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&redirectReq); err != nil {
+		http.Error(w, `{"error": "Invalid JSON"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Validate required fields
+	if len(redirectReq.SourceDomains) == 0 || redirectReq.DestinationURL == "" {
+		http.Error(w, `{"error": "Source domains and destination URL are required"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Set default redirect code if not provided
+	if redirectReq.RedirectCode == 0 {
+		redirectReq.RedirectCode = 301
+	}
+
+	// Validate redirect code
+	if redirectReq.RedirectCode != 301 && redirectReq.RedirectCode != 302 {
+		http.Error(w, `{"error": "Redirect code must be 301 or 302"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Create updated redirect
+	redirect := models.NewRedirect(redirectReq.SourceDomains, redirectReq.DestinationURL, redirectReq.RedirectCode, redirectReq.PreservePath)
+	redirect.ID = id
+	redirect.UpdateTimestamp()
+
+	// Update redirect in Caddy configuration
+	if err := h.CaddyClient.UpdateRedirect(*redirect); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": "Failed to update redirect in Caddy: %v"}`, err), http.StatusInternalServerError)
+		return
+	}
+
+	// Log update redirect action
+	if h.AuditService != nil {
+		user := auth.GetUserFromContext(r.Context())
+		username := "unknown"
+		userID := "unknown"
+		if user != nil {
+			username = user.Username
+			userID = user.ID
+		}
+		ipAddress := r.RemoteAddr
+		if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
+			ipAddress = ip
+		}
+		h.AuditService.Log("UPDATE_REDIRECT", fmt.Sprintf("Redirect '%s' updated from %v to '%s'", redirect.ID, redirect.SourceDomains, redirect.DestinationURL), userID, username, ipAddress)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(redirect); err != nil {
+		// Log error if needed, but response is already written
+		return
+	}
+}
+
+// DeleteRedirect removes a redirect configuration
+func (h *Handler) DeleteRedirect(w http.ResponseWriter, r *http.Request) {
+	id := extractIDFromPath(r.URL.Path)
+	if id == "" {
+		http.Error(w, `{"error": "Invalid redirect ID"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Remove redirect from Caddy configuration
+	if err := h.CaddyClient.DeleteRedirect(id); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": "Failed to delete redirect from Caddy: %v"}`, err), http.StatusInternalServerError)
+		return
+	}
+
+	// Log delete redirect action
+	if h.AuditService != nil {
+		user := auth.GetUserFromContext(r.Context())
+		username := "unknown"
+		userID := "unknown"
+		if user != nil {
+			username = user.Username
+			userID = user.ID
+		}
+		ipAddress := r.RemoteAddr
+		if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
+			ipAddress = ip
+		}
+		h.AuditService.Log("DELETE_REDIRECT", fmt.Sprintf("Redirect '%s' deleted", id), userID, username, ipAddress)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write([]byte(fmt.Sprintf(`{"message": "Redirect %s deleted successfully"}`, id))); err != nil {
+		// Log error if needed, but response is already written
+		return
+	}
+}

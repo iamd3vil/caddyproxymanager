@@ -39,9 +39,7 @@ onMounted(async () => {
   let theme = localStorage.getItem("theme");
   if (!theme) {
     // No saved theme, check system preference
-    const prefersDark = window.matchMedia(
-      "(prefers-color-scheme: dark)",
-    ).matches;
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     theme = prefersDark ? "dark" : "light";
   }
   isDark.value = theme === "dark";
@@ -115,12 +113,11 @@ const handleLogout = async () => {
         >
           <li><RouterLink to="/">Dashboard</RouterLink></li>
           <li><RouterLink to="/proxies">Proxies</RouterLink></li>
+          <li><RouterLink to="/redirects">Redirects</RouterLink></li>
           <li><RouterLink to="/audit-log">Audit Log</RouterLink></li>
         </ul>
       </div>
-      <RouterLink to="/" class="btn btn-ghost text-xl"
-        >Caddy Proxy Manager</RouterLink
-      >
+      <RouterLink to="/" class="btn btn-ghost text-xl">Caddy Proxy Manager</RouterLink>
     </div>
     <div class="navbar-center hidden lg:flex">
       <ul class="menu menu-horizontal px-1">
@@ -129,9 +126,10 @@ const handleLogout = async () => {
           <RouterLink to="/proxies" class="btn btn-ghost">Proxies</RouterLink>
         </li>
         <li>
-          <RouterLink to="/audit-log" class="btn btn-ghost"
-            >Audit Log</RouterLink
-          >
+          <RouterLink to="/redirects" class="btn btn-ghost">Redirects</RouterLink>
+        </li>
+        <li>
+          <RouterLink to="/audit-log" class="btn btn-ghost">Audit Log</RouterLink>
         </li>
       </ul>
     </div>
@@ -171,10 +169,7 @@ const handleLogout = async () => {
       </label>
 
       <!-- User dropdown (only show if auth is enabled and user is authenticated) -->
-      <div
-        v-if="isAuthEnabled && isAuthenticated"
-        class="dropdown dropdown-end"
-      >
+      <div v-if="isAuthEnabled && isAuthenticated" class="dropdown dropdown-end">
         <div tabindex="0" role="button" class="btn btn-ghost gap-2">
           <!-- User avatar -->
           <div class="avatar placeholder">
@@ -185,9 +180,7 @@ const handleLogout = async () => {
             </div>
           </div>
           <!-- Username -->
-          <span class="hidden sm:inline text-sm">{{
-            currentUser?.username || "User"
-          }}</span>
+          <span class="hidden sm:inline text-sm">{{ currentUser?.username || "User" }}</span>
           <!-- Dropdown arrow -->
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -210,9 +203,7 @@ const handleLogout = async () => {
         >
           <li class="menu-title">
             <span>Signed in as</span>
-            <span class="font-semibold">{{
-              currentUser?.username || "User"
-            }}</span>
+            <span class="font-semibold">{{ currentUser?.username || "User" }}</span>
           </li>
           <div class="divider my-0"></div>
           <li>
