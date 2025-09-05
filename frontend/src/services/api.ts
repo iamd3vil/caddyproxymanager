@@ -8,6 +8,7 @@ export interface Proxy {
   dns_credentials?: Record<string, string>;
   custom_headers?: Record<string, string>;
   basic_auth?: { enabled: boolean; username: string; password: string } | null;
+  custom_caddy_json?: string;
   health_check_enabled?: boolean;
   health_check_interval?: string;
   health_check_path?: string;
@@ -123,6 +124,7 @@ class ApiClient {
     dns_credentials?: Record<string, string>;
     custom_headers?: Record<string, string>;
     basic_auth?: { enabled: boolean; username: string; password: string } | null;
+    custom_caddy_json?: string;
     health_check_enabled?: boolean;
     health_check_interval?: string;
     health_check_path?: string;
@@ -147,6 +149,7 @@ class ApiClient {
       dns_credentials?: Record<string, string>;
       custom_headers?: Record<string, string>;
       basic_auth?: { enabled: boolean; username: string; password: string } | null;
+      custom_caddy_json?: string;
       health_check_enabled?: boolean;
       health_check_interval?: string;
       health_check_path?: string;

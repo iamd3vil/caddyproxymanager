@@ -87,6 +87,7 @@ func (h *Handler) CreateProxy(w http.ResponseWriter, r *http.Request) {
 		DNSCredentials            map[string]string `json:"dns_credentials"`
 		CustomHeaders             map[string]string `json:"custom_headers"`
 		BasicAuth                 *models.BasicAuth `json:"basic_auth"`
+		CustomCaddyJSON           string            `json:"custom_caddy_json"`
 		HealthCheckEnabled        bool              `json:"health_check_enabled"`
 		HealthCheckInterval       string            `json:"health_check_interval"`
 		HealthCheckPath           string            `json:"health_check_path"`
@@ -135,6 +136,7 @@ func (h *Handler) CreateProxy(w http.ResponseWriter, r *http.Request) {
 	proxy.DNSCredentials = proxyReq.DNSCredentials
 	proxy.CustomHeaders = proxyReq.CustomHeaders
 	proxy.BasicAuth = proxyReq.BasicAuth
+	proxy.CustomCaddyJSON = proxyReq.CustomCaddyJSON
 	proxy.HealthCheckEnabled = proxyReq.HealthCheckEnabled
 	if proxyReq.HealthCheckInterval != "" {
 		proxy.HealthCheckInterval = proxyReq.HealthCheckInterval
@@ -202,6 +204,7 @@ func (h *Handler) UpdateProxy(w http.ResponseWriter, r *http.Request) {
 		DNSCredentials            map[string]string `json:"dns_credentials"`
 		CustomHeaders             map[string]string `json:"custom_headers"`
 		BasicAuth                 *models.BasicAuth `json:"basic_auth"`
+		CustomCaddyJSON           string            `json:"custom_caddy_json"`
 		HealthCheckEnabled        bool              `json:"health_check_enabled"`
 		HealthCheckInterval       string            `json:"health_check_interval"`
 		HealthCheckPath           string            `json:"health_check_path"`
@@ -251,6 +254,7 @@ func (h *Handler) UpdateProxy(w http.ResponseWriter, r *http.Request) {
 	proxy.DNSCredentials = proxyReq.DNSCredentials
 	proxy.CustomHeaders = proxyReq.CustomHeaders
 	proxy.BasicAuth = proxyReq.BasicAuth
+	proxy.CustomCaddyJSON = proxyReq.CustomCaddyJSON
 	proxy.HealthCheckEnabled = proxyReq.HealthCheckEnabled
 	if proxyReq.HealthCheckInterval != "" {
 		proxy.HealthCheckInterval = proxyReq.HealthCheckInterval

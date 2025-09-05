@@ -15,6 +15,7 @@ A modern web-based management interface for Caddy reverse proxy configurations, 
 - **📝 Custom Headers**: Add custom request/response headers for enhanced functionality
 - **🛡️ IP Access Control**: Whitelist or blacklist IP addresses for advanced security
 - **📋 Audit Logging**: Comprehensive logging of all configuration changes
+- **🔧 Custom Caddy JSON Snippets**: Advanced feature for inserting raw Caddy JSON configuration
 
 ## 🚀 Quick Start
 
@@ -98,6 +99,26 @@ All configuration changes are automatically logged:
 - **Timestamps**: When changes were made
 - **Change Details**: What was modified
 - **System Events**: Automatic system actions and health check status changes
+
+#### Custom Caddy JSON Snippets
+Advanced users can insert raw Caddy JSON snippets into their proxy configurations for features not directly exposed in the UI:
+- **Deep Merge**: Custom JSON is deep-merged with UI-generated configuration
+- **Override Control**: Custom values override any conflicting keys from the UI
+- **Validation**: Built-in JSON validation prevents malformed configurations
+- **Safety**: Clear warnings inform users about the advanced nature of the feature
+
+To use this feature:
+1. Open the "Advanced" section when creating or editing a proxy
+2. Enter valid Caddy JSON in the provided text area
+3. The JSON will be merged with the generated configuration when applied
+
+Example use cases:
+- Custom middleware handlers
+- Advanced routing rules
+- Specialized TLS configurations
+- Custom logging formats
+
+**Warning**: This is an advanced feature. Incorrect JSON syntax can break your proxy or the entire Caddy server.
 
 ### SSL Certificate Options
 

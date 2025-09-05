@@ -512,11 +512,49 @@ func (c *Client) buildProxyRoute(proxy models.Proxy) (*models.CaddyRoute, error)
 	// Build matchers for the route
 	matchers := c.buildRouteMatchers(proxy)
 
-	// Create the final route
+	// Create the base route
 	newRoute := models.CaddyRoute{
 		ID:     proxy.ID,
 		Handle: handlers,
 		Match:  matchers,
+	}
+
+	// Apply custom Caddy JSON if provided
+	if proxy.CustomCaddyJSON != "" {
+		// Validate the JSON first
+		if err := validateCustomCaddyJSON(proxy.CustomCaddyJSON); err != nil {
+			return nil, fmt.Errorf("invalid custom Caddy JSON: %v", err)
+		}
+
+		// Parse the custom JSON
+		var customRoute map[string]interface{}
+		if err := json.Unmarshal([]byte(proxy.CustomCaddyJSON), &customRoute); err != nil {
+			return nil, fmt.Errorf("failed to parse custom Caddy JSON: %v", err)
+		}
+
+		// Convert the route to a map for merging
+		routeJSON, err := json.Marshal(newRoute)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal route: %v", err)
+		}
+
+		var routeMap map[string]interface{}
+		if err := json.Unmarshal(routeJSON, &routeMap); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal route: %v", err)
+		}
+
+		// Deep merge the custom JSON with the generated route
+		mergedRoute := deepMergeJSON(routeMap, customRoute)
+
+		// Convert back to CaddyRoute
+		mergedJSON, err := json.Marshal(mergedRoute)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal merged route: %v", err)
+		}
+
+		if err := json.Unmarshal(mergedJSON, &newRoute); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal merged route: %v", err)
+		}
 	}
 
 	return &newRoute, nil
@@ -1038,4 +1076,39 @@ func (c *Client) loadMetadataFromFile() error {
 
 	c.metadata = &metadata
 	return nil
+}
+
+// validateCustomCaddyJSON validates that the provided string is valid JSON
+func validateCustomCaddyJSON(jsonStr string) error {
+	if jsonStr == "" {
+		return nil // Empty string is valid
+	}
+
+	var js json.RawMessage
+	return json.Unmarshal([]byte(jsonStr), &js)
+}
+
+// deepMergeJSON merges src into dst, with src values overwriting dst values
+func deepMergeJSON(dst, src map[string]interface{}) map[string]interface{} {
+	if dst == nil {
+		dst = make(map[string]interface{})
+	}
+
+	for key, srcVal := range src {
+		if srcMap, ok := srcVal.(map[string]interface{}); ok {
+			if dstVal, exists := dst[key]; exists {
+				if dstMap, ok := dstVal.(map[string]interface{}); ok {
+					dst[key] = deepMergeJSON(dstMap, srcMap)
+				} else {
+					dst[key] = srcVal
+				}
+			} else {
+				dst[key] = srcVal
+			}
+		} else {
+			dst[key] = srcVal
+		}
+	}
+
+	return dst
 }

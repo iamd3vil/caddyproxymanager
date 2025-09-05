@@ -26,16 +26,17 @@ type Proxy struct {
 	ID                        string            `json:"id"`
 	Domain                    string            `json:"domain"`
 	TargetURL                 string            `json:"target_url"`
-	SSLMode                   string            `json:"ssl_mode"`        // "auto", "custom", "none"
-	ChallengeType             string            `json:"challenge_type"`  // "http", "dns"
-	DNSProvider               string            `json:"dns_provider"`    // "cloudflare", "digitalocean", "duckdns"
-	DNSCredentials            map[string]string `json:"dns_credentials"` // provider-specific credentials
-	CustomHeaders             map[string]string `json:"custom_headers"`  // custom request headers
-	BasicAuth                 *BasicAuth        `json:"basic_auth"`      // optional basic authentication
-	Status                    string            `json:"status"`          // "active", "inactive", "error"
+	SSLMode                   string            `json:"ssl_mode"`          // "auto", "custom", "none"
+	ChallengeType             string            `json:"challenge_type"`    // "http", "dns"
+	DNSProvider               string            `json:"dns_provider"`      // "cloudflare", "digitalocean", "duckdns"
+	DNSCredentials            map[string]string `json:"dns_credentials"`   // provider-specific credentials
+	CustomHeaders             map[string]string `json:"custom_headers"`    // custom request headers
+	BasicAuth                 *BasicAuth        `json:"basic_auth"`        // optional basic authentication
+	CustomCaddyJSON           string            `json:"custom_caddy_json"` // custom Caddy JSON snippet
+	Status                    string            `json:"status"`            // "active", "inactive", "error"
 	HealthCheckEnabled        bool              `json:"health_check_enabled"`
 	HealthCheckInterval       string            `json:"health_check_interval"`        // e.g., "30s"
-	HealthCheckPath           string            `json:"health_check_path"`            // e.g., "/health"
+	HealthCheckPath           string            `json:"health_check_path"`            // e.g., "/"
 	HealthCheckExpectedStatus int               `json:"health_check_expected_status"` // e.g., 200
 	AllowedIPs                []string          `json:"allowed_ips"`                  // IP whitelist
 	BlockedIPs                []string          `json:"blocked_ips"`                  // IP blacklist
@@ -57,12 +58,12 @@ func NewProxy(domain, targetURL, sslMode string) *Proxy {
 		CustomHeaders:             make(map[string]string),
 		BasicAuth:                 nil, // disabled by default
 		Status:                    "active",
-		HealthCheckEnabled:        false,        // disabled by default
-		HealthCheckInterval:       "30s",       // default interval
-		HealthCheckPath:           "/",         // default path
-		HealthCheckExpectedStatus: 200,         // default expected status
-		AllowedIPs:                []string{},  // empty whitelist by default
-		BlockedIPs:                []string{},  // empty blacklist by default
+		HealthCheckEnabled:        false,      // disabled by default
+		HealthCheckInterval:       "30s",      // default interval
+		HealthCheckPath:           "/",        // default path
+		HealthCheckExpectedStatus: 200,        // default expected status
+		AllowedIPs:                []string{}, // empty whitelist by default
+		BlockedIPs:                []string{}, // empty blacklist by default
 		CreatedAt:                 now,
 		UpdatedAt:                 now,
 	}
