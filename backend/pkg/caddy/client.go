@@ -142,6 +142,232 @@ func (c *Client) GetConfig() (*models.CaddyConfig, error) {
 	return &config, nil
 }
 
+// AddRedirect adds a new redirect configuration to Caddy
+func (c *Client) AddRedirect(redirect models.Redirect) error {
+	// Validate redirect
+	if err := redirect.Validate(); err != nil {
+		return fmt.Errorf("invalid redirect: %v", err)
+	}
+
+	// Build the redirect route
+	newRoute, err := c.buildRedirectRoute(redirect)
+	if err != nil {
+		return fmt.Errorf("failed to build redirect route: %v", err)
+	}
+
+	// Get current config
+	config, err := c.GetConfig()
+	if err != nil || config.Apps.HTTP.Servers == nil {
+		// If no config exists or servers is null, create a new one
+		config = &models.CaddyConfig{
+			Apps: models.CaddyApps{
+				HTTP: models.CaddyHTTP{
+					Servers: map[string]models.CaddyServer{},
+				},
+			},
+		}
+	}
+
+	// Redirects always use the https_enabled server to handle both HTTP and HTTPS
+	serverName := "https_enabled"
+	listenPorts := []string{":80", ":443"}
+
+	// Add route to server
+	if server, exists := config.Apps.HTTP.Servers[serverName]; exists {
+		server.Routes = append(server.Routes, *newRoute)
+
+		// Add any new ports to the listen array
+		for _, port := range listenPorts {
+			if !slices.Contains(server.Listen, port) {
+				server.Listen = append(server.Listen, port)
+			}
+		}
+
+		config.Apps.HTTP.Servers[serverName] = server
+	} else {
+		// Create new server
+		newServer := models.CaddyServer{
+			Listen: listenPorts,
+			Routes: []models.CaddyRoute{*newRoute},
+		}
+
+		config.Apps.HTTP.Servers[serverName] = newServer
+	}
+
+	// Update Caddy configuration
+	return c.updateConfig(config)
+}
+
+// buildRedirectRoute creates a Caddy route for a redirect
+func (c *Client) buildRedirectRoute(redirect models.Redirect) (*models.CaddyRoute, error) {
+	// Build the redirect handler using static_response
+	destinationURL := redirect.DestinationURL
+
+	// Add path preservation if enabled
+	if redirect.PreservePath {
+		destinationURL = redirect.DestinationURL + "{http.request.uri}"
+	}
+
+	// Use two handlers: first set headers, then respond
+	headersHandler := models.CaddyHandler{
+		Handler: "headers",
+		Response: &models.CaddyHeadersResponse{
+			Set: map[string][]string{
+				"Location": {destinationURL},
+			},
+		},
+	}
+
+	responseHandler := models.CaddyHandler{
+		Handler:    "static_response",
+		StatusCode: redirect.RedirectCode,
+	}
+
+	// Build matchers for all source domains
+	var matchers []models.CaddyMatch
+	for _, domain := range redirect.SourceDomains {
+		// Always create a host matcher for each domain, regardless of port
+		// Caddy can handle host matching with ports correctly
+		matchers = append(matchers, models.CaddyMatch{
+			Host: []string{domain},
+		})
+	}
+
+	// If no matchers were created (empty source domains), this is an error
+	if len(matchers) == 0 {
+		return nil, fmt.Errorf("redirect must have at least one source domain")
+	}
+
+	// Create the route with both handlers
+	return &models.CaddyRoute{
+		ID:     redirect.ID,
+		Handle: []models.CaddyHandler{headersHandler, responseHandler},
+		Match:  matchers,
+	}, nil
+}
+
+// UpdateRedirect updates an existing redirect configuration in Caddy
+func (c *Client) UpdateRedirect(redirect models.Redirect) error {
+	// For now, delete and re-add (more sophisticated update logic can be added later)
+	if err := c.DeleteRedirect(redirect.ID); err != nil {
+		return err
+	}
+	return c.AddRedirect(redirect)
+}
+
+// DeleteRedirect removes a redirect configuration from Caddy
+func (c *Client) DeleteRedirect(id string) error {
+	// Get current config to find which server contains the route
+	config, err := c.GetConfig()
+	if err != nil || config.Apps.HTTP.Servers == nil {
+		return fmt.Errorf("failed to get current config: %v", err)
+	}
+
+	// Find and remove the route from all servers
+	for serverName, server := range config.Apps.HTTP.Servers {
+		var filteredRoutes []models.CaddyRoute
+		found := false
+
+		for _, route := range server.Routes {
+			if route.ID != id {
+				filteredRoutes = append(filteredRoutes, route)
+			} else {
+				found = true
+			}
+		}
+
+		if found {
+			// Update the server's routes
+			server.Routes = filteredRoutes
+			config.Apps.HTTP.Servers[serverName] = server
+
+			// If server has no routes left, remove the server entirely
+			if len(filteredRoutes) == 0 {
+				delete(config.Apps.HTTP.Servers, serverName)
+			}
+
+			// Update entire configuration
+			return c.updateConfig(config)
+		}
+	}
+
+	return fmt.Errorf("redirect with ID %s not found", id)
+}
+
+// ParseRedirectsFromConfig extracts redirect configurations from Caddy config
+func (c *Client) ParseRedirectsFromConfig(config *models.CaddyConfig) []models.Redirect {
+	var redirects []models.Redirect
+
+	if config == nil || config.Apps.HTTP.Servers == nil {
+		return redirects
+	}
+
+	for _, server := range config.Apps.HTTP.Servers {
+		for _, route := range server.Routes {
+			// Skip routes without IDs (not created by proxy manager)
+			if route.ID == "" || !strings.HasPrefix(route.ID, "redirect_") {
+				continue
+			}
+
+			// Find the static_response handler and headers handler
+			var responseHandler *models.CaddyHandler
+			var headersHandler *models.CaddyHandler
+
+			for i := range route.Handle {
+				if route.Handle[i].Handler == "static_response" && route.Handle[i].StatusCode >= 301 && route.Handle[i].StatusCode <= 302 {
+					responseHandler = &route.Handle[i]
+				}
+				if route.Handle[i].Handler == "headers" {
+					headersHandler = &route.Handle[i]
+				}
+			}
+
+			// Skip if no response handler found
+			if responseHandler == nil {
+				continue
+			}
+
+			// Extract destination URL from Location header in headers handler
+			destinationURL := ""
+			if headersHandler != nil && headersHandler.Response != nil && headersHandler.Response.Set != nil {
+				if locations, ok := headersHandler.Response.Set["Location"]; ok && len(locations) > 0 {
+					destinationURL = locations[0]
+				}
+			}
+
+			if destinationURL == "" {
+				continue // Skip if no location header found
+			}
+
+			redirect := models.Redirect{
+				ID:             route.ID,
+				DestinationURL: destinationURL,
+				RedirectCode:   responseHandler.StatusCode,
+				Status:         "active",
+				CreatedAt:      "2024-01-01T00:00:00Z", // Default timestamp
+				UpdatedAt:      "2024-01-01T00:00:00Z", // Default timestamp
+			}
+
+			// Check if path is preserved (destination URL ends with {http.request.uri})
+			if strings.HasSuffix(destinationURL, "{http.request.uri}") {
+				redirect.PreservePath = true
+				redirect.DestinationURL = strings.TrimSuffix(destinationURL, "{http.request.uri}")
+			}
+
+			// Extract source domains from matchers
+			for _, match := range route.Match {
+				if len(match.Host) > 0 {
+					redirect.SourceDomains = append(redirect.SourceDomains, match.Host...)
+				}
+			}
+
+			redirects = append(redirects, redirect)
+		}
+	}
+
+	return redirects
+}
+
 // AddProxy adds a new proxy configuration to Caddy
 func (c *Client) AddProxy(proxy models.Proxy) error {
 	// Validate IP lists
