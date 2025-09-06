@@ -2,6 +2,37 @@
 
 A modern web-based management interface for Caddy reverse proxy configurations, similar to nginx proxy manager but built specifically for Caddy.
 
+## 📖 Table of Contents
+
+- [✨ Features](#-features)
+- [🚀 Quick Start](#-quick-start)
+  - [Using Docker (Recommended)](#using-docker-recommended)
+  - [Using Docker Compose (Alternative)](#using-docker-compose-alternative)
+- [📦 Installation](#-installation)
+  - [Pre-built Docker Image (GitHub Container Registry)](#pre-built-docker-image-github-container-registry)
+  - [Docker Compose with Pre-built Image](#docker-compose-with-pre-built-image)
+  - [Available Tags](#available-tags)
+  - [Important Notes](#important-notes)
+  - [Manual Installation](#manual-installation)
+- [📖 Usage](#-usage)
+  - [Creating a Proxy](#creating-a-proxy)
+  - [Advanced Proxy Features](#advanced-proxy-features)
+  - [SSL Certificate Options](#ssl-certificate-options)
+  - [Supported DNS Providers](#supported-dns-providers)
+- [🛠 Development](#-development)
+  - [Project Structure](#project-structure)
+  - [Development Commands](#development-commands)
+  - [Building Custom Caddy](#building-custom-caddy)
+- [🔧 Configuration](#-configuration)
+  - [Environment Variables](#environment-variables)
+  - [Ports](#ports)
+- [🐳 Docker Configuration](#-docker-configuration)
+  - [Volumes](#volumes)
+- [🔒 Security](#-security)
+- [🤝 Contributing](#-contributing)
+- [📄 License](#-license)
+- [🙏 Acknowledgments](#-acknowledgments)
+
 ## ✨ Features
 
 - **🌐 Web UI**: Clean, modern interface built with Vue 3, Vite, and DaisyUI
