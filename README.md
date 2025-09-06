@@ -59,7 +59,6 @@ docker run -d \
   -p 80:80 \
   -p 443:443 \
   -p 8080:8080 \
-  -v $(pwd)/config:/config \
   -v $(pwd)/data:/data \
   -v $(pwd)/logs:/var/log \
   ghcr.io/iamd3vil/caddyproxymanager:latest
@@ -100,7 +99,6 @@ docker run -d \
   -p 80:80 \
   -p 443:443 \
   -p 8080:8080 \
-  -v caddy_config:/config \
   -v caddy_data:/data \
   -v caddy_logs:/var/log \
   ghcr.io/iamd3vil/caddyproxymanager:latest
@@ -120,7 +118,6 @@ services:
       - "443:443" 
       - "8080:8080"
     volumes:
-      - ./config:/config
       - ./data:/data
       - ./logs:/var/log
     environment:
@@ -143,7 +140,7 @@ docker-compose up -d
 
 ### Important Notes
 
-**Persistence**: The `/config` and `/data` directories contain your proxy configurations and SSL certificates. Make sure to mount these as volumes to preserve your settings across container updates.
+**Persistence**: The `/data` directory contains all your proxy configurations, SSL certificates, and application data. Make sure to mount this as a volume to preserve your settings across container updates.
 
 **Security**: For production use, consider:
 - Running on a private network or behind a firewall
@@ -350,7 +347,6 @@ xcaddy build \
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `CADDY_CONFIG_FILE` | Path to Caddy config JSON | `/config/caddy-config.json` |
 | `STATIC_DIR` | Frontend static files directory | `/var/www/html` |
 | `CLOUDFLARE_API_TOKEN` | Cloudflare DNS API token | - |
 | `DO_AUTH_TOKEN` | DigitalOcean auth token | - |
@@ -376,7 +372,6 @@ The Docker setup includes:
 - **Persistent volumes** for config and certificates
 
 ### Volumes
-- `./config` → `/config` - Configuration persistence
 - `./data` → `/data` - Caddy data (certificates, etc.)
 - `./logs` → `/var/log` - Application logs
 

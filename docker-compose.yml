@@ -7,8 +7,7 @@ services:
       - "443:443"   # HTTPS traffic
       - "8080:8080" # Proxy Manager Web UI
     volumes:
-      - ./config:/config # Persistent config storage
-      - ./data:/data     # Caddy data (certificates, etc.)
+      - ./data:/data     # Application data (configs, certificates, etc.)
       - ./logs:/var/log  # Logs
     environment:
       # DNS Provider credentials (optional - can be configured via UI instead)

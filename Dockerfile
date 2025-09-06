@@ -63,11 +63,11 @@ COPY --from=backend-builder /app/backend/proxy-manager /usr/local/bin/proxy-mana
 COPY --from=frontend-builder /app/backend/static /var/www/html
 
 # Create necessary directories
-RUN mkdir -p /etc/caddy /var/log/caddy /var/log/proxy-manager /config
+RUN mkdir -p /etc/caddy /var/log/caddy /var/log/proxy-manager
 
 # Copy configuration files
 COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-COPY docker/caddy-bootstrap.json /config/caddy-bootstrap.json
+COPY docker/caddy-bootstrap.json /etc/caddy/caddy-bootstrap.json
 COPY docker/start.sh /usr/local/bin/start.sh
 
 # Make startup script executable
@@ -81,7 +81,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 EXPOSE 80 443 8080
 
 # Set work directory
-WORKDIR /config
+WORKDIR /data
 
 # Use custom startup script
 CMD ["/usr/local/bin/start.sh"]

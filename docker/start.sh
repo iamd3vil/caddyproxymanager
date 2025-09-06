@@ -6,15 +6,14 @@ echo "========================================="
 
 # Set default environment variables if not provided
 export DATA_DIR=${DATA_DIR:-/data}
-export CADDY_CONFIG_FILE=${CADDY_CONFIG_FILE:-/config/caddy-config.json}
 export STATIC_DIR=${STATIC_DIR:-/var/www/html}
 
 # Display environment info
 echo "📋 Environment Information:"
 echo "   - Proxy Manager Web UI: http://localhost:8080"  
 echo "   - Frontend: http://localhost (port 80)"
-echo "   - Config file: $CADDY_CONFIG_FILE"
 echo "   - Data directory: $DATA_DIR"
+echo "   - Caddy config will be: $DATA_DIR/caddy-config.json"
 echo ""
 
 # Check if Caddy binary has DNS plugins
