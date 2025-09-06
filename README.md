@@ -67,7 +67,6 @@ docker run -d \
 
 **Access the web interface:**
 - Proxy Manager UI: http://localhost:8080
-- Caddy Admin API: http://localhost:2019 (optional, for debugging)
 
 ### Using Docker Compose (Alternative)
 
@@ -84,7 +83,6 @@ docker run -d \
 
 3. **Access the web interface**
    - Proxy Manager UI: http://localhost:8080
-   - Caddy Admin API: http://localhost:2019 (optional, for debugging)
 
 ## 📦 Installation
 
@@ -121,7 +119,6 @@ services:
       - "80:80"
       - "443:443" 
       - "8080:8080"
-      - "2019:2019"  # Optional: Caddy Admin API
     volumes:
       - ./config:/config
       - ./data:/data
@@ -369,7 +366,6 @@ xcaddy build \
 | `80` | HTTP | Proxy traffic and ACME challenges |
 | `443` | HTTPS | Secure proxy traffic |
 | `8080` | Proxy Manager | Web management interface |
-| `2019` | Caddy Admin | Caddy API (optional) |
 
 ## 🐳 Docker Configuration
 

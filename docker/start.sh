@@ -4,12 +4,17 @@ set -e
 echo "🚀 Starting Caddy Proxy Manager Container"
 echo "========================================="
 
+# Set default environment variables if not provided
+export DATA_DIR=${DATA_DIR:-/data}
+export CADDY_CONFIG_FILE=${CADDY_CONFIG_FILE:-/config/caddy-config.json}
+export STATIC_DIR=${STATIC_DIR:-/var/www/html}
+
 # Display environment info
 echo "📋 Environment Information:"
-echo "   - Caddy Admin API: http://localhost:2019"
-echo "   - Proxy Manager API: http://localhost:8080"  
+echo "   - Proxy Manager Web UI: http://localhost:8080"  
 echo "   - Frontend: http://localhost (port 80)"
-echo "   - Config file: /config/caddy-config.json"
+echo "   - Config file: $CADDY_CONFIG_FILE"
+echo "   - Data directory: $DATA_DIR"
 echo ""
 
 # Check if Caddy binary has DNS plugins

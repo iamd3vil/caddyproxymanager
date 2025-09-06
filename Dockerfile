@@ -78,7 +78,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
   CMD curl -f http://localhost/api/health || exit 1
 
 # Expose ports
-EXPOSE 80 443 8080 2019
+EXPOSE 80 443 8080
 
 # Set work directory
 WORKDIR /config

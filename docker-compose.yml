@@ -1,34 +1,21 @@
 services:
   caddy-proxy-manager:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/iamd3vil/caddyproxymanager:latest
     container_name: caddy-proxy-manager
     ports:
-      - "80:80" # HTTP traffic
-      - "443:443" # HTTPS traffic
-      - "8080:8080" # Proxy Manager API
-      - "2019:2019" # Caddy Admin API (optional, for debugging)
+      - "80:80"     # HTTP traffic
+      - "443:443"   # HTTPS traffic
+      - "8080:8080" # Proxy Manager Web UI
     volumes:
-      - config:/config # Persistent config storage
-      - data:/data # Caddy data (certificates, etc.)
-      - logs:/var/log # Logs
+      - ./config:/config # Persistent config storage
+      - ./data:/data     # Caddy data (certificates, etc.)
+      - ./logs:/var/log  # Logs
     environment:
-      # Application configuration
-      - CADDY_CONFIG_FILE=/config/caddy-config.json
-      - STATIC_DIR=/var/www/html
-
       # DNS Provider credentials (optional - can be configured via UI instead)
       # Only set these if you want to use the same credentials for all proxies
       # - CLOUDFLARE_API_TOKEN=your-api-token
       # - DO_AUTH_TOKEN=your-do-token
       # - DUCKDNS_TOKEN=your-duckdns-token
-      # - NAMECHEAP_API_KEY=your-namecheap-key
-      # - NAMECHEAP_API_USER=your-username
-      # - NAMECHEAP_CLIENT_IP=your-server-ip
-      # - AWS_ACCESS_KEY_ID=your-aws-access-key
-      # - AWS_SECRET_ACCESS_KEY=your-aws-secret-key
-      # - AWS_REGION=us-east-1
       # - HETZNER_API_TOKEN=your-hetzner-token
       # - GANDI_BEARER_TOKEN=your-gandi-token
       # - DNSIMPLE_API_ACCESS_TOKEN=your-dnsimple-token
