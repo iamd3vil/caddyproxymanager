@@ -19,11 +19,30 @@ A modern web-based management interface for Caddy reverse proxy configurations, 
 
 ## 🚀 Quick Start
 
-### Using Docker Compose (Recommended)
+### Using Docker (Recommended)
+
+**Pull and run the pre-built image:**
+```bash
+docker run -d \
+  --name caddy-proxy-manager \
+  -p 80:80 \
+  -p 443:443 \
+  -p 8080:8080 \
+  -v $(pwd)/config:/config \
+  -v $(pwd)/data:/data \
+  -v $(pwd)/logs:/var/log \
+  ghcr.io/iamd3vil/caddyproxymanager:latest
+```
+
+**Access the web interface:**
+- Proxy Manager UI: http://localhost:8080
+- Caddy Admin API: http://localhost:2019 (optional, for debugging)
+
+### Using Docker Compose (Alternative)
 
 1. **Clone the repository**
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/iamd3vil/caddyproxymanager.git
    cd caddyproxymanager
    ```
 
@@ -35,6 +54,75 @@ A modern web-based management interface for Caddy reverse proxy configurations, 
 3. **Access the web interface**
    - Proxy Manager UI: http://localhost:8080
    - Caddy Admin API: http://localhost:2019 (optional, for debugging)
+
+## 📦 Installation
+
+### Pre-built Docker Image (GitHub Container Registry)
+
+The easiest way to get started is using the pre-built Docker image:
+
+```bash
+# Pull the latest image
+docker pull ghcr.io/iamd3vil/caddyproxymanager:latest
+
+# Run with basic configuration
+docker run -d \
+  --name caddy-proxy-manager \
+  -p 80:80 \
+  -p 443:443 \
+  -p 8080:8080 \
+  -v caddy_config:/config \
+  -v caddy_data:/data \
+  -v caddy_logs:/var/log \
+  ghcr.io/iamd3vil/caddyproxymanager:latest
+```
+
+### Docker Compose with Pre-built Image
+
+Create a `docker-compose.yml` file:
+
+```yaml
+services:
+  caddy-proxy-manager:
+    image: ghcr.io/iamd3vil/caddyproxymanager:latest
+    container_name: caddy-proxy-manager
+    ports:
+      - "80:80"
+      - "443:443" 
+      - "8080:8080"
+      - "2019:2019"  # Optional: Caddy Admin API
+    volumes:
+      - ./config:/config
+      - ./data:/data
+      - ./logs:/var/log
+    environment:
+      # Optional: Set DNS provider credentials
+      - CLOUDFLARE_API_TOKEN=your-token-here
+      - DO_AUTH_TOKEN=your-token-here  
+      - DUCKDNS_TOKEN=your-token-here
+    restart: unless-stopped
+```
+
+Then run:
+```bash
+docker-compose up -d
+```
+
+### Available Tags
+
+- `ghcr.io/iamd3vil/caddyproxymanager:latest` - Latest stable release
+- `ghcr.io/iamd3vil/caddyproxymanager:v1.0.0` - Specific version
+
+### Important Notes
+
+**Persistence**: The `/config` and `/data` directories contain your proxy configurations and SSL certificates. Make sure to mount these as volumes to preserve your settings across container updates.
+
+**Security**: For production use, consider:
+- Running on a private network or behind a firewall
+- Using environment variables or Docker secrets for DNS provider credentials
+- Regularly updating to the latest image version
+
+**Network**: Ensure ports 80 and 443 are accessible from the internet if you need ACME HTTP-01 challenges for Let's Encrypt certificates.
 
 ### Manual Installation
 
