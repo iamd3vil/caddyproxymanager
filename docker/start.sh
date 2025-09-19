@@ -40,6 +40,14 @@ echo "   Proxy manager exists: $(test -f /usr/local/bin/proxy-manager && echo 'Y
 echo "   Proxy manager permissions: $(ls -la /usr/local/bin/proxy-manager 2>/dev/null || echo 'NOT FOUND')"
 echo "   Data dir: $(ls -la /data 2>/dev/null || echo 'NOT ACCESSIBLE')"
 
+# Test proxy-manager directly to see the error
+echo "🧪 Testing proxy-manager directly..."
+export CADDY_ADMIN_URL="http://localhost:2019"
+export STATIC_DIR="/var/www/html"
+export PORT="8080"
+export DATA_DIR="/data"
+timeout 3 /usr/local/bin/proxy-manager 2>&1 | head -10 || echo "   Direct test failed or timed out"
+
 # Start supervisor to manage both processes
 echo "🏁 Starting services with supervisor..."
 exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
