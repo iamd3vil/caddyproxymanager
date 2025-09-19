@@ -27,9 +27,6 @@ fi
 echo "   Expected: cloudflare, digitalocean, duckdns, hetzner, gandi, dnsimple"
 echo ""
 
-# Ensure necessary directories exist
-mkdir -p /var/log/caddy /var/log/proxy-manager /var/log /var/run
-
 # Start supervisor to manage both processes
 echo "🏁 Starting services with supervisor..."
 exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
