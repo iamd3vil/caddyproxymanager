@@ -27,6 +27,11 @@ fi
 echo "   Expected: cloudflare, digitalocean, duckdns, hetzner, gandi, dnsimple"
 echo ""
 
+# Ensure log directories exist (safety check)
+echo "📁 Ensuring log directories exist..."
+mkdir -p /var/log/caddy /var/log/proxy-manager /var/log /var/run
+echo "   ✅ Log directories created"
+
 # Start supervisor to manage both processes
 echo "🏁 Starting services with supervisor..."
 exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
