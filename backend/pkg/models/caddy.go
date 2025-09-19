@@ -18,6 +18,7 @@ type CaddyServer struct {
 	Listen         []string             `json:"listen"`
 	Routes         []CaddyRoute         `json:"routes"`
 	AutomaticHTTPS *CaddyAutomaticHTTPS `json:"automatic_https,omitempty"`
+	TLSPolicies    []CaddyTLSPolicy     `json:"tls_connection_policies,omitempty"`
 }
 
 type CaddyAutomaticHTTPS struct {
@@ -90,8 +91,17 @@ type CaddyUpstream struct {
 // TLS and ACME structures for DNS challenge support
 
 type CaddyTLS struct {
-	CertificateAuthorities map[string]CaddyCA `json:"certificate_authorities,omitempty"`
-	Policies               []CaddyTLSPolicy   `json:"policies,omitempty"`
+	CertificateAuthorities map[string]CaddyCA  `json:"certificate_authorities,omitempty"`
+	Automation             *CaddyTLSAutomation `json:"automation,omitempty"`
+}
+
+type CaddyTLSAutomation struct {
+	Policies []CaddyAutomationPolicy `json:"policies,omitempty"`
+}
+
+type CaddyAutomationPolicy struct {
+	Subjects []string      `json:"subjects,omitempty"`
+	Issuers  []CaddyIssuer `json:"issuers,omitempty"`
 }
 
 type CaddyCA struct {

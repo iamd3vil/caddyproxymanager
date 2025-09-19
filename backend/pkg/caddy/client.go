@@ -424,7 +424,7 @@ func (c *Client) AddProxy(proxy models.Proxy) error {
 			}
 		}
 
-		// DNS challenge TLS policy will be handled in global TLS config
+		// DNS challenge will be handled in global TLS automation config
 
 		config.Apps.HTTP.Servers[serverName] = server
 	} else {
@@ -441,7 +441,7 @@ func (c *Client) AddProxy(proxy models.Proxy) error {
 			}
 		}
 
-		// DNS challenge TLS policy will be handled in global TLS config
+		// DNS challenge will be handled in global TLS automation config
 
 		config.Apps.HTTP.Servers[serverName] = newServer
 	}
@@ -452,12 +452,6 @@ func (c *Client) AddProxy(proxy models.Proxy) error {
 			config.Apps.TLS = &models.CaddyTLS{}
 		}
 		c.configureDNSChallenge(config, proxy)
-
-		// Add TLS policy to global TLS configuration
-		tlsPolicy := c.createDNSChallengeTLSPolicy(proxy)
-		if tlsPolicy != nil {
-			config.Apps.TLS.Policies = append(config.Apps.TLS.Policies, *tlsPolicy)
-		}
 	}
 
 	// Save metadata
@@ -964,47 +958,15 @@ func parseTargetURL(targetURL string) (string, bool, string, error) {
 	return fmt.Sprintf("%s:%s", host, port), useHTTPS, host, nil
 }
 
-// createDNSChallengeTLSPolicy creates a TLS policy for DNS challenges
-func (c *Client) createDNSChallengeTLSPolicy(proxy models.Proxy) *models.CaddyTLSPolicy {
-	if proxy.ChallengeType != "dns" || proxy.DNSProvider == "" {
-		return nil
-	}
-
-	// Create DNS provider configuration
-	dnsProvider := models.CaddyDNSProvider{
-		Name: fmt.Sprintf("dns.providers.%s", proxy.DNSProvider),
-	}
-
-	// Set provider-specific credentials with environment variable fallback
-	configureDNSProviderCredentials(&dnsProvider, proxy)
-
-	// Create the TLS policy with DNS challenge
-	return &models.CaddyTLSPolicy{
-		Match: &models.CaddyTLSMatch{
-			SNI: []string{proxy.Domain},
-		},
-		Issuers: []models.CaddyIssuer{
-			{
-				Module: "acme",
-				Challenges: models.CaddyChallenges{
-					DNS: &models.CaddyDNSChallenge{
-						Provider: dnsProvider,
-					},
-				},
-			},
-		},
-	}
-}
-
-// configureDNSChallenge configures global DNS challenge settings
+// configureDNSChallenge configures DNS challenge using TLS automation policies
 func (c *Client) configureDNSChallenge(config *models.CaddyConfig, proxy models.Proxy) {
 	if proxy.ChallengeType != "dns" || proxy.DNSProvider == "" {
 		return
 	}
 
-	// Initialize certificate authorities if not present
-	if config.Apps.TLS.CertificateAuthorities == nil {
-		config.Apps.TLS.CertificateAuthorities = make(map[string]models.CaddyCA)
+	// Initialize TLS automation if not present
+	if config.Apps.TLS.Automation == nil {
+		config.Apps.TLS.Automation = &models.CaddyTLSAutomation{}
 	}
 
 	// Create DNS provider configuration
@@ -1015,8 +977,8 @@ func (c *Client) configureDNSChallenge(config *models.CaddyConfig, proxy models.
 	// Set provider-specific credentials with environment variable fallback
 	configureDNSProviderCredentials(&dnsProvider, proxy)
 
-	// Configure the ACME CA with DNS challenge
-	acmeCA := models.CaddyCA{
+	// Create ACME issuer with DNS challenge
+	issuer := models.CaddyIssuer{
 		Module: "acme",
 		Challenges: models.CaddyChallenges{
 			DNS: &models.CaddyDNSChallenge{
@@ -1025,8 +987,32 @@ func (c *Client) configureDNSChallenge(config *models.CaddyConfig, proxy models.
 		},
 	}
 
-	// Set the default ACME CA to use DNS challenges
-	config.Apps.TLS.CertificateAuthorities["acme"] = acmeCA
+	// Check if a policy for this domain already exists
+	var existingPolicy *models.CaddyAutomationPolicy
+	for i := range config.Apps.TLS.Automation.Policies {
+		policy := &config.Apps.TLS.Automation.Policies[i]
+		for _, subject := range policy.Subjects {
+			if subject == proxy.Domain {
+				existingPolicy = policy
+				break
+			}
+		}
+		if existingPolicy != nil {
+			break
+		}
+	}
+
+	if existingPolicy != nil {
+		// Update existing policy to include DNS challenge issuer
+		existingPolicy.Issuers = []models.CaddyIssuer{issuer}
+	} else {
+		// Create new automation policy for this domain
+		policy := models.CaddyAutomationPolicy{
+			Subjects: []string{proxy.Domain},
+			Issuers:  []models.CaddyIssuer{issuer},
+		}
+		config.Apps.TLS.Automation.Policies = append(config.Apps.TLS.Automation.Policies, policy)
+	}
 }
 
 // saveMetadataToFile saves the metadata to a JSON file
