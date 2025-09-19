@@ -971,7 +971,7 @@ func (c *Client) configureDNSChallenge(config *models.CaddyConfig, proxy models.
 
 	// Create DNS provider configuration
 	dnsProvider := models.CaddyDNSProvider{
-		Name: fmt.Sprintf("dns.providers.%s", proxy.DNSProvider),
+		Name: proxy.DNSProvider,
 	}
 
 	// Set provider-specific credentials with environment variable fallback
