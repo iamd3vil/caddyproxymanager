@@ -42,10 +42,11 @@ echo "   Data dir: $(ls -la /data 2>/dev/null || echo 'NOT ACCESSIBLE')"
 
 # Test proxy-manager directly to see the error
 echo "🧪 Testing proxy-manager directly..."
-export CADDY_ADMIN_URL="http://localhost:2019"
-export STATIC_DIR="/var/www/html"
-export PORT="8080"
-export DATA_DIR="/data"
+export CADDY_ADMIN_URL="${CADDY_ADMIN_URL:-http://localhost:2019}"
+export STATIC_DIR="${STATIC_DIR:-/var/www/html}"
+export PORT="${PORT:-8080}"
+export DATA_DIR="${DATA_DIR:-/data}"
+echo "   Using PORT: $PORT"
 timeout 3 /usr/local/bin/proxy-manager 2>&1 | head -10 || echo "   Direct test failed or timed out"
 
 # Start supervisor to manage both processes
