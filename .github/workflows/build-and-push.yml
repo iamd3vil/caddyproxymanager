@@ -55,12 +55,8 @@ jobs:
         platforms: ${{ matrix.platform }}
         push: true
         labels: ${{ steps.meta.outputs.labels }}
-        cache-from: |
-          type=gha,scope=${{ matrix.platform }}
-          type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-${{ matrix.platform }}
-        cache-to: |
-          type=gha,scope=${{ matrix.platform }},mode=max
-          type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-${{ matrix.platform }},mode=max
+        cache-from: type=gha,scope=${{ matrix.platform }}
+        cache-to: type=gha,scope=${{ matrix.platform }},mode=max
         build-args: |
           BUILDKIT_INLINE_CACHE=1
         outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
