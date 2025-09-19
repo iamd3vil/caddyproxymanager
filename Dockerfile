@@ -58,7 +58,8 @@ RUN apk --no-cache add \
     supervisor \
     tzdata \
     curl && \
-    mkdir -p /etc/caddy /var/log/caddy /var/log/proxy-manager /var/log /var/run
+    mkdir -p /etc/caddy /var/log/caddy /var/log/proxy-manager /var/log /var/run /data && \
+    chmod 755 /data
 
 # Copy all binaries and files
 COPY --from=caddy-builder /usr/bin/caddy /usr/bin/caddy

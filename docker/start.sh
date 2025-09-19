@@ -28,9 +28,17 @@ echo "   Expected: cloudflare, digitalocean, duckdns, hetzner, gandi, dnsimple"
 echo ""
 
 # Ensure log directories exist (safety check)
-echo "📁 Ensuring log directories exist..."
-mkdir -p /var/log/caddy /var/log/proxy-manager /var/log /var/run
-echo "   ✅ Log directories created"
+echo "📁 Ensuring directories exist..."
+mkdir -p /var/log/caddy /var/log/proxy-manager /var/log /var/run /data
+chmod 755 /data
+echo "   ✅ Log and data directories created"
+
+# Debug: Check if files exist
+echo "🔍 Debug: Checking file structure..."
+echo "   Static dir contents: $(ls -la /var/www/html 2>/dev/null | wc -l) files"
+echo "   Proxy manager exists: $(test -f /usr/local/bin/proxy-manager && echo 'YES' || echo 'NO')"
+echo "   Proxy manager permissions: $(ls -la /usr/local/bin/proxy-manager 2>/dev/null || echo 'NOT FOUND')"
+echo "   Data dir: $(ls -la /data 2>/dev/null || echo 'NOT ACCESSIBLE')"
 
 # Start supervisor to manage both processes
 echo "🏁 Starting services with supervisor..."
