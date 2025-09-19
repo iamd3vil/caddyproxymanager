@@ -28,7 +28,16 @@ Thumbs.db
 README.md
 .playwright-mcp/
 caddy-config.json
+CLAUDE.md
+AGENTS.md
+TODO.md
+DOCKER.md
+.kilocode/
 
-# Justfile and development configs
+# Documentation and development configs
 justfile
 Justfile
+docker-compose.yml
+
+# GitHub Actions (not needed in container)
+.github/

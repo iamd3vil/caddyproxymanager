@@ -18,15 +18,18 @@ FROM golang:1.25-alpine AS backend-builder
 
 WORKDIR /app/backend
 
-# Copy go mod file for better caching  
-COPY backend/go.mod ./
-RUN go mod download
+# Copy go mod files for better caching  
+COPY backend/go.mod backend/go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 
 # Copy backend source code
 COPY backend/ .
 
-# Build the backend binary
-RUN CGO_ENABLED=0 GOOS=linux go build -o proxy-manager ./cmd/server
+# Build the backend binary with cache mount
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build -o proxy-manager ./cmd/server
 
 # Stage 3: Build Vue frontend
 FROM node:20-alpine AS frontend-builder
@@ -35,13 +38,16 @@ WORKDIR /app/frontend
 
 # Copy package files first for better caching
 COPY frontend/package*.json ./
-RUN npm install
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --only=production
 
 # Copy frontend source code
 COPY frontend/ .
 
-# Build the frontend
-RUN npm run build
+# Build the frontend with cache mount
+RUN --mount=type=cache,target=/root/.npm \
+    --mount=type=cache,target=node_modules/.cache \
+    npm run build
 
 # Stage 4: Final runtime image
 FROM alpine:3.19
