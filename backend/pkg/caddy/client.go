@@ -424,13 +424,7 @@ func (c *Client) AddProxy(proxy models.Proxy) error {
 			}
 		}
 
-		// Add DNS challenge TLS policy if needed
-		if proxy.SSLMode == SSLModeAuto && proxy.ChallengeType == "dns" {
-			tlsPolicy := c.createDNSChallengeTLSPolicy(proxy)
-			if tlsPolicy != nil {
-				server.TLSPolicies = append(server.TLSPolicies, *tlsPolicy)
-			}
-		}
+		// DNS challenge TLS policy will be handled in global TLS config
 
 		config.Apps.HTTP.Servers[serverName] = server
 	} else {
@@ -447,13 +441,7 @@ func (c *Client) AddProxy(proxy models.Proxy) error {
 			}
 		}
 
-		// Add DNS challenge TLS policy if needed
-		if proxy.SSLMode == SSLModeAuto && proxy.ChallengeType == "dns" {
-			tlsPolicy := c.createDNSChallengeTLSPolicy(proxy)
-			if tlsPolicy != nil {
-				newServer.TLSPolicies = []models.CaddyTLSPolicy{*tlsPolicy}
-			}
-		}
+		// DNS challenge TLS policy will be handled in global TLS config
 
 		config.Apps.HTTP.Servers[serverName] = newServer
 	}
@@ -464,6 +452,12 @@ func (c *Client) AddProxy(proxy models.Proxy) error {
 			config.Apps.TLS = &models.CaddyTLS{}
 		}
 		c.configureDNSChallenge(config, proxy)
+
+		// Add TLS policy to global TLS configuration
+		tlsPolicy := c.createDNSChallengeTLSPolicy(proxy)
+		if tlsPolicy != nil {
+			config.Apps.TLS.Policies = append(config.Apps.TLS.Policies, *tlsPolicy)
+		}
 	}
 
 	// Save metadata

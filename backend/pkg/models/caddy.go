@@ -18,7 +18,6 @@ type CaddyServer struct {
 	Listen         []string             `json:"listen"`
 	Routes         []CaddyRoute         `json:"routes"`
 	AutomaticHTTPS *CaddyAutomaticHTTPS `json:"automatic_https,omitempty"`
-	TLSPolicies    []CaddyTLSPolicy     `json:"tls_policies,omitempty"`
 }
 
 type CaddyAutomaticHTTPS struct {
@@ -92,6 +91,7 @@ type CaddyUpstream struct {
 
 type CaddyTLS struct {
 	CertificateAuthorities map[string]CaddyCA `json:"certificate_authorities,omitempty"`
+	Policies               []CaddyTLSPolicy   `json:"policies,omitempty"`
 }
 
 type CaddyCA struct {
